@@ -1,0 +1,55 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --color-canvas: #07080a;
+  --color-surface: #0d0d0d;
+  --color-surface-elevated: #101111;
+  --color-surface-card: #121212;
+  --color-hairline: #242728;
+  --color-ink: #f4f4f6;
+  --color-body: #cdcdcd;
+  --color-accent-red: #ff6161;
+  --color-accent-blue: #57c1ff;
+  --color-accent-yellow: #ffc533;
+  
+  --font-sans: "Inter", system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-canvas text-body selection:bg-white/20;
+    font-feature-settings: "calt", "kern", "liga", "ss03";
+  }
+
+  /* Fix Chrome autocomplete/autofill styling to match dark theme */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover, 
+  input:-webkit-autofill:focus, 
+  input:-webkit-autofill:active {
+      -webkit-box-shadow: 0 0 0 30px var(--color-surface-elevated) inset !important;
+      -webkit-text-fill-color: var(--color-ink) !important;
+      caret-color: var(--color-ink) !important;
+      transition: background-color 5000s ease-in-out 0s !important;
+  }
+}
+
+/* React Flow Custom Styles */
+.react-flow__node {
+  @apply transition-transform;
+}
+
+.react-flow__handle {
+  @apply opacity-100;
+}
+
+.react-flow__edge-path {
+  @apply stroke-[#242728] transition-all;
+  stroke-width: 2;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  @apply stroke-accent-blue;
+  stroke-width: 3;
+}
