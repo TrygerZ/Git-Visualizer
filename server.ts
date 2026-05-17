@@ -109,17 +109,15 @@ async function startServer() {
     }
 
     try {
-      // Extract owner and repo from URL
-      // Example: https://github.com/facebook/react
-      const regex = /github\.com\/([^/]+)\/([^/]+)/;
-      const match = url.match(regex);
-
-      if (!match) {
+      const urlObj = new URL(!url.startsWith('http') ? `https://${url}` : url);
+      const parts = urlObj.pathname.split('/').filter(Boolean);
+      
+      if (urlObj.hostname !== 'github.com' || parts.length < 2) {
         return res.status(400).json({ error: "Invalid GitHub URL format" });
       }
 
-      const owner = match[1];
-      const repo = match[2].replace(".git", "");
+      const owner = parts[0];
+      const repo = parts[1].replace(".git", "");
 
       // Demo route to test rate limit banner
       if (owner === "demo" && repo === "rate-limit") {
