@@ -154,11 +154,9 @@ async function startServer() {
         }
       }
 
-      // 1. Fetch repo details to get default branch
       const { data: repoDetails } = await currentOctokit.rest.repos.get({ owner, repo });
       const defaultBranch = repoDetails.default_branch;
 
-      // 2. Fetch branches to identify branch names for commits
       const { data: branchesRaw } = await currentOctokit.rest.repos.listBranches({
         owner,
         repo,
@@ -190,7 +188,6 @@ async function startServer() {
         }
       };
 
-      // 3. Fetch commits: up to 300 commits for default branch, and 100 for up to 4 other branches
       await fetchCommits(defaultBranch, 3);
       
       const otherBranches = branchesRaw
@@ -223,7 +220,6 @@ async function startServer() {
       });
 
       // Trace the main line (following the first parent from the newest commit)
-      // Since listCommits fetches from the default branch, the first commit (index 0) is the HEAD of default branch
       if (nodes.length > 0) {
          let currentSha = nodes[0].sha;
          while (currentSha) {
@@ -243,7 +239,7 @@ async function startServer() {
         }
       });
 
-      nodes.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); // Sort oldest first
+      nodes.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
       res.json({
         owner,

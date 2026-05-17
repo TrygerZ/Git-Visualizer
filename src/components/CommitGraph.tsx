@@ -241,7 +241,6 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
   const [isLayouting, setIsLayouting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // New states for Node Action Menu and AI Summary
   const [activeNodeMenu, setActiveNodeMenu] = useState<{ commit: any, x: number, y: number } | null>(null);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [summaryData, setSummaryData] = useState<{ repoName: string; commitSha: string; branch: string; githubUrl: string; message: string; parsedData: ParsedCommit; fileStats?: any[]; rawDiff: string } | null>(null);
@@ -264,7 +263,6 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
   const [sliderX, setSliderX] = useState(0);
   const [sliderY, setSliderY] = useState(0);
 
-  // Extract Contributors
   const contributors = useMemo(() => {
     const map = new Map<string, { name: string; avatar?: string; url?: string }>();
     elements.forEach(el => {
@@ -287,7 +285,6 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
     return Array.from(map.values());
   }, [elements]);
 
-  // Track Active Contributor
   const currentElement = elements[playbackIndex - 1];
   const activeContributorName = useMemo(() => {
     if (!currentElement) return null;
@@ -318,7 +315,6 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
     });
   };
 
-  // Playback Logic
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
     
@@ -341,7 +337,6 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
     };
   }, [isPlaying, elements.length]);
 
-  // Fit Zoom & Initial Pan
   useEffect(() => {
     if (fullLayoutedNodes.length > 0 && !isLayouting) {
       const isHorizontal = layoutDirection === 'RIGHT';
@@ -359,7 +354,6 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
       let optimalZoom = 1;
       if (isHorizontal) {
         const totalHeight = Math.max(maxY - minY, 100);
-        // Reserve space for UI panels
         const availableHeight = window.innerHeight - 250; 
         optimalZoom = availableHeight / totalHeight;
       } else {
@@ -371,7 +365,7 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
       optimalZoom = Math.min(Math.max(optimalZoom, 0.1), 1.5);
       setLockedZoom(optimalZoom);
 
-      if (!lastFoldedIdRef.current && nodes.length <= 1) { // Only center initially if starting at 1
+      if (!lastFoldedIdRef.current && nodes.length <= 1) {
          setCenter(
            (minX + maxX) / 2,
            (minY + maxY) / 2,
@@ -381,7 +375,6 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
     }
   }, [fullLayoutedNodes, isLayouting, layoutDirection, setCenter]);
 
-  // Handle View following for Playback & Unfurl
   useEffect(() => {
     const isHorizontal = layoutDirection === 'RIGHT';
 
@@ -421,17 +414,14 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
     }
   }, [playbackIndex, isPlaying, unfurledIds, currentElement, nodes, lockedZoom, graphBounds, setCenter, layoutDirection]);
 
-  // Layout Logic - Calculate Full Layout Once
   useEffect(() => {
     const calcFullLayout = async () => {
       const initialNodes: Node[] = [];
       const initialEdges: Edge[] = [];
       const nodeMap = new Map<string, any>();
 
-      // Process ALL elements into nodes
       elements.forEach((el, index) => {
         if (el.type === 'folded' && unfurledIds.has(el.id)) {
-          // Unfurl logic: add each commit in the segment
           el.commits.forEach((commit, idx) => {
             const nodeId = `commit-${commit.sha}`;
             initialNodes.push({
@@ -448,7 +438,6 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
             });
             nodeMap.set(commit.sha, nodeId);
 
-            // Internal segment edges
             if (idx > 0) {
               initialEdges.push({
                 id: `edge-${el.id}-${idx}`,
@@ -461,7 +450,6 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
             }
           });
           
-          // Map the first and last commit for external connections
           nodeMap.set(el.id, { 
             first: `commit-${el.commits[0].sha}`, 
             last: `commit-${el.commits[el.commits.length - 1].sha}` 
@@ -480,14 +468,12 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
           });
           nodeMap.set(id, id);
           
-          // Also map individual SHAs to the folded node ID so children can find their parent
           if (el.type === 'folded') {
             el.commits.forEach(c => nodeMap.set(c.sha, id));
           }
         }
       });
 
-      // Create edges based on connections
       elements.forEach((el, index) => {
         if (el.type === 'commit') {
           const branchName = el.data.branch || 'unknown';
@@ -546,7 +532,6 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
     calcFullLayout();
   }, [elements, unfurledIds, layoutDirection]);
 
-  // Apply Playback Index Filters Fast & Search Highlight
   useEffect(() => {
     const isSearching = searchQuery.trim().length > 0;
     const lowerQuery = searchQuery.toLowerCase();
@@ -603,7 +588,6 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
     setNodes(visibleNodes);
     setEdges(visibleEdges);
 
-    // Auto-pan to first match
     if (isSearching) {
       const firstMatch = visibleNodes.find(n => n.style?.opacity === 1);
       if (firstMatch) {
@@ -866,7 +850,7 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
             exit={{ opacity: 0, scale: 0.95, y: -10 }}
             className="fixed z-50 bg-surface-elevated/90 backdrop-blur-md border border-hairline rounded-lg shadow-xl overflow-hidden flex flex-col min-w-[160px]"
             style={{ 
-              left: Math.min(activeNodeMenu.x, window.innerWidth - 200), // Keep within bounds
+              left: Math.min(activeNodeMenu.x, window.innerWidth - 200),
               top: Math.min(activeNodeMenu.y + 10, window.innerHeight - 150)
             }}
           >
@@ -888,7 +872,7 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
                 const githubUrl = activeNodeMenu.commit.github_url || '';
                 setActiveNodeMenu(null);
                 
-                const parsedData = parseCommitData(message); // Pass empty arrays/mocks since we don't have files
+                const parsedData = parseCommitData(message);
                 setSummaryData({ repoName, commitSha: commitId, branch: branchName, githubUrl, message, parsedData, fileStats: [], rawDiff: '' });
                 setIsSummarizing(true);
                 

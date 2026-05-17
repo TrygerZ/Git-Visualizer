@@ -31,12 +31,10 @@ export const parseCommitData = (
   filesChanged: string[] = [],
   stats: { additions: number; deletions: number } = { additions: Math.floor(Math.random() * 200), deletions: Math.floor(Math.random() * 50) }
 ): ParsedCommit => {
-  // 1. Separate Subject and Body
   const lines = rawMessage.trim().split('\n');
   let subject = lines[0] || '';
   const bodyText = lines.slice(1).join('\n').trim();
 
-  // 2. Parse Conventional Commit
   const typeRegex = /^([a-zA-Z]+)(?:\(.*?\))?!?: /;
   let type = 'commit';
   let typeLabel = 'General Update';
@@ -83,14 +81,12 @@ export const parseCommitData = (
     }
   }
 
-  // 3. Process Body into bullet points
   const bodyPoints = bodyText
     .split('\n')
     // Remove common list markdown like '-', '*', or '1.'
     .map(line => line.replace(/^[\s\-\*\d\.]+/, '').trim())
     .filter(line => line.length > 0);
 
-  // 4. Detect Issue/PR References
   const issueRegex = /(?:#|GH-)(\d+)/g;
   const issuesFound = new Set<string>();
   
@@ -101,7 +97,6 @@ export const parseCommitData = (
     }
   });
 
-  // 5. File Impact Analyzer
   let focusArea = 'Mixed / General';
   if (filesChanged.length > 0) {
     const extensionCounts: Record<string, number> = {};
