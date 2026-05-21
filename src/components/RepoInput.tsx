@@ -37,25 +37,26 @@ export const RepoInput = ({ onSearch, isLoading, language = 'en' }: RepoInputPro
       animate={{ opacity: 1, y: 0 }}
       className="w-full max-w-2xl mx-auto"
     >
-      <form onSubmit={handleSubmit} className="relative group">
-        <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-ash group-focus-within:text-white transition-colors">
-          <Github size={20} />
+      <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-2.5 p-1.5 sm:p-2 bg-surface-elevated border border-hairline rounded-2xl relative group">
+        <div className="relative flex-1 flex items-center min-w-0">
+          <div className="absolute left-4 flex items-center pointer-events-none text-ash group-focus-within:text-white transition-colors">
+            <Github size={20} />
+          </div>
+          <input
+            id="github-url-input"
+            type="text"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder={t.placeholder}
+            className="w-full h-11 sm:h-12 pl-12 pr-4 bg-transparent border-0 text-ink placeholder:text-ash outline-none transition-all font-sans text-sm sm:text-base"
+          />
         </div>
-        
-        <input
-          id="github-url-input"
-          type="text"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder={t.placeholder}
-          className="w-full h-14 pl-12 pr-[210px] bg-surface-elevated border border-hairline rounded-xl text-ink placeholder:text-ash outline-none focus:border-hairline-strong focus:ring-1 focus:ring-white/10 transition-all font-sans"
-        />
 
-        <div className="absolute inset-y-0 right-2 flex items-center gap-2">
+        <div className="flex gap-2 shrink-0 w-full sm:w-auto">
           <button
             type="button"
             onClick={() => setShowSettings(!showSettings)}
-            className={`p-2 rounded-lg transition-colors border ${showSettings ? 'border-accent-blue/50 bg-accent-blue/20 text-accent-blue shadow-[0_0_10px_rgba(87,193,255,0.2)]' : 'border-hairline bg-surface text-ash hover:text-white hover:border-hairline-strong hover:bg-white/5'} z-10 flex items-center justify-center`}
+            className={`p-2.5 sm:p-3 rounded-xl transition-colors border ${showSettings ? 'border-accent-blue/50 bg-accent-blue/20 text-accent-blue shadow-[0_0_10px_rgba(87,193,255,0.2)]' : 'border-hairline bg-surface text-ash hover:text-white hover:border-hairline-strong hover:bg-white/5'} flex items-center justify-center flex-1 sm:flex-initial`}
             title={t.settings}
           >
              <Settings2 size={18} />
@@ -63,7 +64,7 @@ export const RepoInput = ({ onSearch, isLoading, language = 'en' }: RepoInputPro
           <button
             type="submit"
             disabled={isLoading || !url}
-            className="flex items-center gap-2 px-6 h-10 bg-accent-blue text-[#0d0d0d] rounded-lg font-bold hover:bg-blue-400 disabled:opacity-40 disabled:bg-surface disabled:text-white disabled:border disabled:border-hairline disabled:cursor-not-allowed transition-all shadow-[0_0_15px_rgba(87,193,255,0.4)] disabled:shadow-none z-10"
+            className="flex items-center justify-center gap-2 px-5 sm:px-6 h-11 sm:h-12 bg-accent-blue text-[#0d0d0d] rounded-xl font-bold hover:bg-blue-400 disabled:opacity-40 disabled:bg-surface disabled:text-white disabled:border disabled:border-hairline disabled:cursor-not-allowed transition-all shadow-[0_0_15px_rgba(87,193,255,0.4)] disabled:shadow-none flex-[2] sm:flex-initial"
           >
             {isLoading ? (
               <Loader2 className="animate-spin" size={18} />

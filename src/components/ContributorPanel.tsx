@@ -14,7 +14,13 @@ interface ContributorPanelProps {
 }
 
 export const ContributorPanel = ({ contributors, activeContributorName }: ContributorPanelProps) => {
-  const [isMinimized, setIsMinimized] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(() => (typeof window !== 'undefined' ? window.innerWidth < 768 : false));
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setIsMinimized(true);
+    }
+  }, []);
 
   return (
     <div className="flex flex-col p-4 bg-surface/80 backdrop-blur-2xl border border-hairline/60 rounded-2xl shadow-2xl transition-all hover:bg-surface-elevated/80 duration-300">

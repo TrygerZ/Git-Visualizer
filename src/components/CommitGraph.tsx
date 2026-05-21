@@ -652,13 +652,13 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
           )}
         </AnimatePresence>
         <Background gap={20} color="#161718" />
-        <Controls position="bottom-left" style={{ marginBottom: '80px' }} className="!bg-surface-elevated !border-hairline !rounded-lg !fill-white" />
+        <Controls position="bottom-left" className="!bg-surface-elevated !border-hairline !rounded-lg !fill-white hidden sm:flex" />
         
-        <Panel position="top-left" className="m-4 flex flex-col gap-4 items-start">
+        <Panel position="top-left" className="m-2 sm:m-4 flex flex-col gap-2 sm:gap-4 items-start">
           <motion.div 
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="px-4 py-3 bg-surface-card border border-hairline rounded-xl flex items-center gap-3 shadow-xl"
+            className="px-4 py-3 bg-surface-card border border-hairline rounded-xl hidden sm:flex items-center gap-3 shadow-xl"
           >
             <div className="w-8 h-8 bg-accent-blue/10 rounded-lg flex items-center justify-center text-accent-blue font-bold">
               {elements.length}
@@ -674,18 +674,23 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
           <ContributorLeaderboard nodes={elements} />
         </Panel>
 
-        <Panel position="top-center" className="mt-6 z-50">
+        <Panel position="top-center" className="mt-3 sm:mt-6 z-50 hidden md:block">
           <SearchBar value={searchQuery} onChange={setSearchQuery} />
         </Panel>
 
-        <Panel position="top-right" className="m-4 flex flex-col gap-4 items-end">
-          <ContributorPanel 
-            contributors={contributors} 
-            activeContributorName={activeContributorName} 
-          />
+        <Panel position="top-right" className="m-2 sm:m-4 flex flex-col gap-2 sm:gap-4 items-end z-55">
+          <div className="block md:hidden">
+            <SearchBar value={searchQuery} onChange={setSearchQuery} />
+          </div>
+          <div className="hidden md:flex flex-col gap-4 items-end">
+            <ContributorPanel 
+              contributors={contributors} 
+              activeContributorName={activeContributorName} 
+            />
+          </div>
         </Panel>
 
-        <Panel position="bottom-center" className="w-full max-w-xl px-4 sm:px-6 mb-8 z-50 pointer-events-none">
+        <Panel position="bottom-center" className="w-full max-w-md px-3 sm:px-6 mb-3 sm:mb-8 z-40 pointer-events-none">
           <div className="relative pointer-events-auto">
             <AnimatePresence>
               {isPlaying && activeContributorName && (
@@ -708,30 +713,28 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
                   </div>
                 </motion.div>
               )}
-            </AnimatePresence>
-
-            <motion.div 
+            </AnimatePresence>            <motion.div 
               initial={{ opacity: 0, y: 50 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-surface/90 backdrop-blur-2xl border border-hairline/60 rounded-3xl p-4 sm:p-5 shadow-[0_20px_50px_rgba(0,0,0,0.5)] space-y-4 pointer-events-auto"
+              className="bg-surface/90 backdrop-blur-2xl border border-hairline/60 rounded-2xl sm:rounded-3xl p-3 sm:p-5 shadow-[0_20px_50px_rgba(0,0,0,0.5)] space-y-3 sm:space-y-4 pointer-events-auto"
             >
               <div className="flex items-center gap-3 sm:gap-5">
                 <button
                   onClick={() => setIsPlaying(prev => !prev)}
-                  className="w-14 h-14 sm:w-16 sm:h-16 flex items-center justify-center bg-white text-black rounded-full hover:scale-105 active:scale-95 transition-all outline-none focus:ring-4 focus:ring-white/20 shrink-0 shadow-[0_0_20px_rgba(255,255,255,0.15)] hover:shadow-[0_0_30px_rgba(255,255,255,0.3)] cursor-pointer"
+                  className="w-11 h-11 sm:w-16 sm:h-16 flex items-center justify-center bg-white text-black rounded-full hover:scale-105 active:scale-95 transition-all outline-none focus:ring-4 focus:ring-white/20 shrink-0 shadow-[0_0_20px_rgba(255,255,255,0.15)] hover:shadow-[0_0_30px_rgba(255,255,255,0.3)] cursor-pointer"
                 >
-                  {isPlaying ? <Pause size={26} fill="currentColor" /> : <Play size={26} className="ml-1" fill="currentColor" />}
+                  {isPlaying ? <Pause className="w-4 h-4 sm:w-6 sm:h-6" fill="currentColor" /> : <Play className="w-4 h-4 sm:w-6 sm:h-6 ml-0.5 sm:ml-1" fill="currentColor" />}
                 </button>
                 
                 <button
                   onClick={() => { setPlaybackIndex(1); setIsPlaying(false); }}
-                  className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center text-white/50 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-all active:scale-95 cursor-pointer"
+                  className="w-8 h-8 sm:w-12 sm:h-12 flex items-center justify-center text-white/50 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-all active:scale-95 cursor-pointer shrink-0"
                   title="Reset"
                 >
-                  <RotateCcw size={20} />
+                  <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />
                 </button>
 
-                <div className="flex-1 px-2">
+                <div className="flex-1 px-1 sm:px-2">
                   <input
                     type="range"
                     min="1"
@@ -741,28 +744,39 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
                     className="w-full accent-white h-1.5 sm:h-2 bg-white/10 rounded-lg appearance-none cursor-pointer hover:bg-white/20 transition-colors"
                   />
                 </div>
-              </div>
 
+                {/* Mobile direct toggle for layout direction */}
+                <button
+                  onClick={() => setLayoutDirection(prev => prev === 'RIGHT' ? 'DOWN' : 'RIGHT')}
+                  className="flex sm:hidden w-8 h-8 items-center justify-center text-accent-blue hover:text-white bg-accent-blue/10 hover:bg-accent-blue/20 border border-accent-blue/25 rounded-full transition-all active:scale-95 cursor-pointer shrink-0"
+                  title={layoutDirection === 'RIGHT' ? t.vertical : t.horizontal}
+                >
+                  <span className="text-[10px] font-extrabold uppercase px-1">
+                    {layoutDirection === 'RIGHT' ? 'H' : 'V'}
+                  </span>
+                </button>
+              </div>
+ 
               <AnimatePresence mode="wait">
                 <motion.div 
                   key={playbackIndex}
                   initial={{ opacity: 0, y: 5 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -5 }}
-                  className="flex items-center gap-3 px-3 py-2 bg-surface-card/50 rounded-lg border border-hairline/30"
+                  className="flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-2 bg-surface-card/50 rounded-lg border border-hairline/30"
                 >
-                  <Clock size={14} className="text-accent-blue" />
+                  <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-accent-blue shrink-0" />
                   <div className="flex-1 min-w-0">
                     {currentElement?.type === 'commit' ? (
-                      <>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-mono text-ash">{currentElement.data.sha.substring(0, 7)}</span>
+                       <>
+                        <div className="flex items-center gap-1.5 sm:gap-2">
+                          <span className="text-[9px] sm:text-[10px] font-mono text-ash shrink-0">{currentElement.data.sha.substring(0, 7)}</span>
                           <span className="text-xs text-ink font-medium truncate">{currentElement.data.message}</span>
                         </div>
-                        <div className="text-[10px] text-ash">
+                        <div className="text-[9px] sm:text-[10px] text-ash truncate">
                           {currentElement.data.author} • {new Date(currentElement.data.date).toLocaleString()}
                         </div>
-                      </>
+                       </>
                     ) : (
                       <div className="flex items-center justify-between w-full">
                          <span className="text-xs font-bold text-ink">Segment: {currentElement?.commits.length} Linear Commits</span>
@@ -772,9 +786,9 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
                   </div>
                 </motion.div>
               </AnimatePresence>
-
-              {/* Slider for Panning */}
-              <div className="pt-3 border-t border-hairline/30 flex items-center gap-3">
+ 
+              {/* Slider for Panning (hidden on mobile, direct touch is preferred) */}
+              <div className="pt-3 border-t border-hairline/30 hidden sm:flex items-center gap-3">
                 <span className="text-[10px] uppercase font-bold text-ash tracking-widest min-w-[50px]">
                   {layoutDirection === 'RIGHT' ? 'Pan X' : 'Pan Y'}
                 </span>
@@ -800,7 +814,7 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
           </div>
         </Panel>
         
-        <Panel position="bottom-left" className="m-4">
+        <Panel position="bottom-left" className="m-4 hidden sm:block">
           <div className="flex items-center p-1 bg-surface-card border border-hairline rounded-xl shadow-lg backdrop-blur-md">
             <button 
               onClick={() => setLayoutDirection('RIGHT')}

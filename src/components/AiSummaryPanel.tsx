@@ -80,7 +80,7 @@ export const AiSummaryPanel: React.FC<AiSummaryPanelProps> = ({
       animate={{ y: 0, opacity: 1 }}
       exit={{ y: "100%", opacity: 0 }}
       transition={{ type: "spring", damping: 25, stiffness: 200 }}
-      className="fixed bottom-0 left-0 w-full max-h-[60vh] z-50 bg-surface-elevated/95 backdrop-blur-xl border-t border-hairline shadow-[0_-10px_40px_rgba(0,0,0,0.3)] rounded-t-2xl flex flex-col"
+      className="fixed bottom-0 left-0 w-full h-[85vh] md:h-[65vh] max-h-[85vh] md:max-h-[65vh] z-50 bg-surface-elevated/95 backdrop-blur-xl border-t border-hairline shadow-[0_-10px_40px_rgba(0,0,0,0.3)] rounded-t-2xl flex flex-col"
     >
       {/* Header */}
       <div className="flex items-start justify-between px-6 py-4 border-b border-hairline/50">

@@ -83,8 +83,8 @@ export default function App() {
         </div>
       </div>
 
-      <header className="relative z-10 pt-16 pb-12 px-6">
-        <div className="absolute top-6 right-6 z-50">
+      <header className={`relative z-10 transition-all duration-300 ${data ? 'pt-6 pb-4 px-4 md:pt-10 md:pb-6' : 'pt-16 pb-12 px-6'}`}>
+        <div className="absolute top-4 right-4 sm:top-6 sm:right-6 z-50">
           <div 
             className="flex items-center p-1 rounded-full bg-surface-elevated border border-hairline relative"
             title={language === 'en' ? 'Ganti ke Bahasa Indonesia' : 'Switch to English'}
@@ -107,30 +107,36 @@ export default function App() {
           </div>
         </div>
 
-        <div className="max-w-7xl mx-auto text-center space-y-8">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="inline-flex items-center gap-3 px-4 py-1.5 rounded-full bg-surface-elevated border border-hairline text-accent-blue text-sm font-medium"
-          >
-            <div className="w-2 h-2 rounded-full bg-accent-blue animate-pulse" />
-            {t.badge}
-          </motion.div>
+        <div className="max-w-7xl mx-auto text-center space-y-4 sm:space-y-6">
+          {!data && (
+            <>
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="inline-flex items-center gap-3 px-4 py-1.5 rounded-full bg-surface-elevated border border-hairline text-accent-blue text-sm font-medium"
+              >
+                <div className="w-2 h-2 rounded-full bg-accent-blue animate-pulse" />
+                {t.badge}
+              </motion.div>
 
-          <div className="space-y-4">
-            <h1 className="text-5xl md:text-6xl font-semibold text-ink tracking-tight">
-              {t.title1} <span className="text-white">{t.title2}</span>
-            </h1>
-            <p className="text-lg text-ash max-w-2xl mx-auto">
-              {t.subtitle}
-            </p>
+              <div className="space-y-3 sm:space-y-4">
+                <h1 className="text-4xl md:text-6xl font-semibold text-ink tracking-tight">
+                  {t.title1} <span className="text-white">{t.title2}</span>
+                </h1>
+                <p className="text-sm sm:text-lg text-ash max-w-2xl mx-auto px-4">
+                  {t.subtitle}
+                </p>
+              </div>
+            </>
+          )}
+
+          <div className={`${data ? 'max-w-md mx-auto sm:max-w-2xl' : ''}`}>
+            <RepoInput onSearch={handleSearch} isLoading={loading} language={language} />
           </div>
-
-          <RepoInput onSearch={handleSearch} isLoading={loading} language={language} />
         </div>
       </header>
 
-      <main className="relative z-10 max-w-7xl mx-auto px-6 pb-24 min-h-[600px]">
+      <main className="relative z-10 max-w-7xl mx-auto px-4 md:px-6 pb-12 md:pb-24 min-h-[500px] md:min-h-[600px]">
         <AnimatePresence mode="wait">
           {error && (
             <motion.div
@@ -172,7 +178,7 @@ export default function App() {
               key="graph"
               initial={{ opacity: 0, y: 40 }}
               animate={{ opacity: 1, y: 0 }}
-              className="mt-12 h-[800px]"
+              className="mt-4 md:mt-12 h-[550px] md:h-[800px]"
             >
               <CommitGraph elements={data.elements} repoName={`${data.owner}/${data.repo}`} language={language} />
             </motion.div>

@@ -42,8 +42,14 @@ interface ContributorLeaderboardProps {
 }
 
 export const ContributorLeaderboard = ({ nodes }: ContributorLeaderboardProps) => {
-  const [isMinimized, setIsMinimized] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(() => (typeof window !== 'undefined' ? window.innerWidth < 768 : false));
   const leaderboardData = useLeaderboardData(nodes);
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setIsMinimized(true);
+    }
+  }, []);
 
   return (
     <div className="relative z-[60]">
