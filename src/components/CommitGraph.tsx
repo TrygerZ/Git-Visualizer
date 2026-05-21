@@ -814,8 +814,9 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
           </div>
         </Panel>
         
-        <Panel position="bottom-left" className="m-4 hidden sm:block">
-          <div className="flex items-center p-1 bg-surface-card border border-hairline rounded-xl shadow-lg backdrop-blur-md">
+        <Panel position="bottom-right" className="m-4 flex flex-col gap-2.5 items-end">
+          {/* Desktop/Tablet Orientation Toggle */}
+          <div className="hidden sm:flex items-center p-1 bg-surface-card border border-hairline rounded-xl shadow-lg backdrop-blur-md">
             <button 
               onClick={() => setLayoutDirection('RIGHT')}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${layoutDirection === 'RIGHT' ? 'bg-accent-blue text-white shadow-sm' : 'text-ash hover:text-white'}`}
@@ -829,10 +830,8 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
               {t.vertical}
             </button>
           </div>
-        </Panel>
 
-        <Panel position="bottom-right" className="m-4">
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 items-end">
             {unfurledIds.size > 0 && (
               <button 
                 onClick={() => {
