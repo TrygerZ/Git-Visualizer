@@ -34,7 +34,8 @@ function buildChildMap(commits: CommitNode[]): Map<string, CommitNode> {
 function isCritical(sha: string, commitMap: Map<string, CommitNode>): boolean {
   const c = commitMap.get(sha);
   if (!c) return true;
-  return c.parents.length !== 1 || (c.children?.length ?? 0) !== 1;
+  const availableParents = c.parents.filter(p => commitMap.has(p)).length;
+  return availableParents !== 1 || (c.children?.length ?? 0) !== 1;
 }
 
 function collectBackward(
@@ -244,7 +245,7 @@ export async function fetchRepoData(
     .slice(0, 4);
   const allCommitBatches: RawCommit[] = [...defaultCommits];
   for (const branchName of otherBranches) {
-    const commits = await fetchBranchCommits(octokit, owner, repo, branchName, 1);
+    const commits = await fetchBranchCommits(octokit, owner, repo, branchName, 3);
     allCommitBatches.push(...commits);
   }
   const seen = new Map<string, RawCommit>();

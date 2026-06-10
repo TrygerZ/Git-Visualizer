@@ -37,7 +37,11 @@ export function buildUserContent(message: string, rawDiff: string): string {
   const safeMessage = message
     ? `[COMMIT_MESSAGE_START]\n${message}\n[COMMIT_MESSAGE_END]`
     : 'No commit message';
-  const truncatedDiff = rawDiff.substring(0, 15000);
+  const safeDiff = rawDiff || '';
+  let truncatedDiff = safeDiff;
+  if (safeDiff.length > 15000) {
+    truncatedDiff = safeDiff.substring(0, 15000) + '\n\n... [Diff truncated due to length limitations]';
+  }
   return `Commit Message:\n${safeMessage}\n\nGit Diff:\n\`\`\`\n${truncatedDiff}\n\`\`\``;
 }
 

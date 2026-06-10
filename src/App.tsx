@@ -52,7 +52,7 @@ export default function App() {
             ? 'Network or proxy timeout (502). Processing a very large repository or request was blocked. Please try another repository.' 
             : 'Terjadi kesalahan jaringan atau server terlalu lama merespons (502). Sedang memproses data repositori GitHub yang sangat besar atau request di-block. Silahkan coba repositori lain.');
         } else if (response.status === 403) {
-          throw new Error('Batas permintaan');
+          throw new Error('Batas permintaan (Rate Limit) GitHub API tercapai. Silahkan coba lagi nanti atau gunakan PAT.');
         } else {
           throw new Error(`Server returned an unexpected format: ${response.status} ${response.statusText}`);
         }
@@ -65,7 +65,7 @@ export default function App() {
       setData(result);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'An unexpected error occurred';
-      if (message === 'Batas permintaan') {
+      if (message.includes('Batas permintaan') || message.includes('Rate Limit')) {
           setError(language === 'en' ? 'GitHub API rate limit exceeded. You can use your own GitHub Personal Access Token (PAT) via the Settings button next to the Visualize button.' : 'Batas permintaan (Rate Limit) GitHub API tercapai. Anda bisa menggunakan GitHub Personal Access Token (PAT) Anda sendiri lewat tombol Setting di samping tombol Visualize.');
       } else {
           setError(message);

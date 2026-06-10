@@ -25,7 +25,7 @@ export class CacheStore<T> {
   set(key: string, data: T): void {
     if (this.store.size >= this.maxSize) {
       const oldest = this.store.keys().next().value;
-      if (oldest) this.store.delete(oldest);
+      if (oldest !== undefined) this.store.delete(oldest);
     }
     this.store.set(key, { data, timestamp: Date.now() });
   }

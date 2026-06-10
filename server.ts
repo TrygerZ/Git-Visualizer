@@ -3,6 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { Octokit } from "octokit";
 import dotenv from "dotenv";
+import crypto from "crypto";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { fetchCommitDiff, foldTopological, fetchRepoData, validateGithubUrl } from "./src/server/github";
@@ -20,6 +21,7 @@ const repoCache = new CacheStore<RepoDataResult>();
 
 async function startServer() {
   const app = express();
+  app.set('trust proxy', 1);
   const PORT = 3000;
 
   app.use(express.json({ limit: "1mb" }));
@@ -58,7 +60,8 @@ async function startServer() {
       if (!parsed) return res.status(400).json({ error: "Invalid GitHub URL format" });
       const { owner, repo } = parsed;
 
-      const cacheKey = `${owner}/${repo}`;
+      const tokenHash = clientToken ? crypto.createHash('sha256').update(clientToken).digest('hex') : 'public';
+      const cacheKey = `${owner}/${repo}/${tokenHash}`;
       const cached = repoCache.get(cacheKey);
       if (cached) {
         return res.json(cached);
@@ -158,8 +161,8 @@ async function startServer() {
       return res.status(500).json({ error: "GEMINI_API_KEY is not set." });
     }
 
-    if (!rawDiff) {
-      return res.status(400).json({ error: "rawDiff is required" });
+    if (!rawDiff && !message) {
+      return res.status(400).json({ error: "rawDiff or commit message is required" });
     }
 
     try {

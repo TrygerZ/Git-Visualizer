@@ -6,6 +6,7 @@ import {
   useReactFlow,
   ReactFlowProvider,
   Position,
+  useNodesInitialized,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { GitCommit, GraphElement, FoldedNode as IFoldedNode } from '../types';
@@ -283,6 +284,7 @@ const GraphInner = ({ elements, repoName, language = 'en', githubToken }: Commit
   useEffect(() => { elementsRef.current = elements; }, [elements]);
   useEffect(() => { languageRef.current = language; }, [language]);
   const { setCenter } = useReactFlow();
+  const nodesInitialized = useNodesInitialized();
 
   const t = useTranslations(language);
   const { runLayout, isLayouting, layoutError } = useElkLayout();
@@ -415,7 +417,7 @@ const GraphInner = ({ elements, repoName, language = 'en', githubToken }: Commit
   }, [playbackIndex, isPlaying, unfurledIds, currentElement, visibleNodes, lockedZoom, bounds, setCenter, layoutDirection]);
 
   useEffect(() => {
-    if (!firstMatch || searchQuery.trim().length === 0) return;
+    if (!firstMatch || searchQuery.trim().length === 0 || !nodesInitialized) return;
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     searchTimeoutRef.current = setTimeout(() => {
       setCenter(
