@@ -32,7 +32,7 @@ export const SearchBar = ({ value, onChange, language = 'en' }: SearchBarProps) 
           <motion.div 
             key="search-input"
             initial={{ opacity: 0, width: 40 }}
-            animate={{ opacity: 1, width: 220 }}
+            animate={{ opacity: 1, width: 'calc(100vw - 160px)' }}
             exit={{ opacity: 0, width: 40 }}
             className="relative flex items-center bg-surface/90 backdrop-blur-2xl border border-hairline/60 rounded-full shadow-2xl overflow-hidden md:hidden transition-all focus-within:border-white/30 focus-within:ring-4 focus-within:ring-white/10"
           >

@@ -109,7 +109,9 @@ export function useElkLayout() {
       return { nodes: layoutedNodes, edges: layoutedEdges };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to compute graph layout';
-      setError(message);
+      if (message !== 'Stale layout') {
+        setError(message);
+      }
       throw err;
     } finally {
       setIsLayouting(false);

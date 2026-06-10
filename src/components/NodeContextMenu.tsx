@@ -40,7 +40,7 @@ export function NodeContextMenu({
       initial={{ opacity: 0, scale: 0.95, y: -10 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95, y: -10 }}
-      className="fixed z-50 bg-surface-elevated/90 backdrop-blur-md border border-hairline rounded-lg shadow-xl overflow-hidden flex flex-col min-w-[160px]"
+      className="fixed z-[70] bg-surface-elevated/90 backdrop-blur-md border border-hairline rounded-lg shadow-xl overflow-hidden flex flex-col min-w-[160px]"
       style={{
         left: Math.min(x, window.innerWidth - 200),
         top: Math.min(y + 10, window.innerHeight - 150),

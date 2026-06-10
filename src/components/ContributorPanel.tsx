@@ -45,7 +45,7 @@ export const ContributorPanel = ({ contributors, activeContributorName, language
             animate={{ height: 'auto', opacity: 1, marginTop: 12, transitionEnd: { overflow: 'visible' } }}
             exit={{ height: 0, opacity: 0, marginTop: 0, overflow: 'hidden' }}
           >
-            <div className="flex flex-wrap gap-3 max-w-[240px] p-4 -m-4">
+            <div className="flex flex-wrap gap-3 max-w-[240px] max-h-[40vh] overflow-y-auto custom-scrollbar p-4 -m-4">
               {contributors.map((contributor) => {
                 const isActive = contributor.name === activeContributorName;
                 
