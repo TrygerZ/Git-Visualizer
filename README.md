@@ -7,9 +7,11 @@ A modern, clean, and interactive Directed Acyclic Graph (DAG) visualizer for Git
 - **Interactive Visualization**: Render complex Git histories and branch merges into a beautiful, easy-to-navigate DAG using React Flow.
 - **AI-Powered Commit Summaries**: Understand what changed in a commit at a glance. Integrated with the Gemini API to provide intelligent code review summaries, impact analysis, and focus areas.
 - **Insights & Stats**: View contributor leaderboards, file statistics, and commit metadata.
-- **Bilingual Support**: Seamlessly switch between English (EN) and Indonesian (ID) interfaces.
+- **Bilingual Support**: Seamlessly switch between English (EN) and Indonesian (ID) interfaces across all components.
 - **GitHub API Integration**: Fetch any public repository directly. Support for Personal Access Tokens (PAT) to bypass GitHub API rate limits.
-- **Performance Optimized**: Groups linear commit paths into folded capsules to keep the graph uncluttered and performant, even for large repositories.
+- **Performance Optimized**: Groups linear commit paths into folded capsules, with in-memory caching (5-min TTL) and ELK layout engine to keep the graph uncluttered and performant, even for large repositories.
+- **Accessibility**: Keyboard-navigable contributor panels, click-outside and Escape key handlers on modals, and ARIA roles for interactive elements.
+- **Security Hardened**: Rate limiting, SSRF protection, Helmet CSP headers, and input validation on all API endpoints.
 
 ## 🚀 Getting Started
 
@@ -54,11 +56,15 @@ npm run build
 npm start
 ```
 
+> **Note:** The `dev` and `start` scripts use `cross-env` to set `NODE_ENV` for cross-platform compatibility.
+
 ## 🛠️ Technology Stack
 
-- **Frontend**: React 18, Vite, Tailwind CSS, React Flow (for graph rendering), Framer Motion (for animations), Lucide React (for icons)
+- **Frontend**: React 19, Vite 6, Tailwind CSS v4, `@xyflow/react` v12 (graph rendering), motion v12 (animations), Lucide React (icons)
 - **Backend**: Node.js, Express.js (serving API and static frontend assets)
 - **AI & Integrations**: Google Gemini API (`@google/genai`), GitHub REST API
+- **Security**: Helmet (CSP), express-rate-limit, strict SSRF validation
+- **Layout**: ELK (Eclipse Layout Kernel) for automatic graph arrangement
 
 ## 💡 How it Works
 
