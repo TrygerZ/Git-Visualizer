@@ -1,8 +1,6 @@
-import React from 'react';
 import { Handle, Position, NodeProps, type Node } from '@xyflow/react';
 import { GitCommit } from '../types';
-import { motion, AnimatePresence } from 'motion/react';
-import { Calendar, User, ExternalLink, GitBranch, ChevronLeft, Minimize2 } from 'lucide-react';
+import { Calendar, User, GitBranch, Minimize2 } from 'lucide-react';
 import { getBranchColor } from '../lib/getBranchColor';
 
 export const CommitNode = ({ data }: NodeProps<Node<{ commit: GitCommit, onFold?: () => void }>>) => {
@@ -61,7 +59,6 @@ export const CommitNode = ({ data }: NodeProps<Node<{ commit: GitCommit, onFold?
         </div>
       </div>
 
-      <Handle type="source" position={Position.Right} className="!w-1 !h-4 !rounded-none !bg-accent-blue !border-0" />
     </div>
   );
 };

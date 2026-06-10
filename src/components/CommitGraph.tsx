@@ -278,6 +278,10 @@ const GraphInner = ({ elements, repoName, language = 'en', githubToken }: Commit
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastMoveRef = useRef(0);
   const summaryAbortRef = useRef<AbortController | null>(null);
+  const elementsRef = useRef(elements);
+  const languageRef = useRef(language);
+  useEffect(() => { elementsRef.current = elements; }, [elements]);
+  useEffect(() => { languageRef.current = language; }, [language]);
   const { setCenter } = useReactFlow();
 
   const t = useTranslations(language);
@@ -299,7 +303,7 @@ const GraphInner = ({ elements, repoName, language = 'en', githubToken }: Commit
     return Array.from(map.values());
   }, [elements]);
 
-  const toggleUnfurl = (id: string) => {
+  const toggleUnfurl = useCallback((id: string) => {
     setUnfurledIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -307,7 +311,7 @@ const GraphInner = ({ elements, repoName, language = 'en', githubToken }: Commit
         lastFoldedIdRef.current = id;
       } else {
         next.add(id);
-        const el = elements.find((e) => (e.type === 'commit' ? e.data.sha : e.id) === id);
+        const el = elementsRef.current.find((e) => (e.type === 'commit' ? e.data.sha : e.id) === id);
         if (el && el.type === 'folded' && el.commits.length > 0) {
           lastFoldedIdRef.current = `commit-${el.commits[0].sha}`;
         } else {
@@ -316,9 +320,9 @@ const GraphInner = ({ elements, repoName, language = 'en', githubToken }: Commit
       }
       return next;
     });
-  };
+  }, []);
 
-  const currentElement = elements[playbackIndex - 1];
+  const currentElement = elements.length > 0 ? elements[Math.min(playbackIndex, elements.length) - 1] : undefined;
   const activeContributorName = useMemo(() => {
     if (!currentElement) return null;
     return currentElement.type === 'commit' ? currentElement.data.author : currentElement.commits[0]?.author;
@@ -349,7 +353,7 @@ const GraphInner = ({ elements, repoName, language = 'en', githubToken }: Commit
   useEffect(() => {
     let cancelled = false;
     const performLayout = async () => {
-      const { nodes: initialNodes, nodeMap } = buildNodes(elements, unfurledIds, toggleUnfurl, language);
+      const { nodes: initialNodes, nodeMap } = buildNodes(elements, unfurledIds, toggleUnfurl, languageRef.current);
       const allEdges = buildEdges(elements, unfurledIds, nodeMap);
       try {
         const result = await runLayout(initialNodes, allEdges, layoutDirection);
@@ -390,7 +394,7 @@ const GraphInner = ({ elements, repoName, language = 'en', githubToken }: Commit
     };
     performLayout();
     return () => { cancelled = true; };
-  }, [elements, unfurledIds, layoutDirection, runLayout, computeBounds, setCenter, language]);
+  }, [elements, unfurledIds, layoutDirection, runLayout, computeBounds, setCenter]);
 
   useEffect(() => {
     const isHorizontal = layoutDirection === 'RIGHT';
@@ -475,7 +479,6 @@ const GraphInner = ({ elements, repoName, language = 'en', githubToken }: Commit
         const updatedParsedData = parseCommitData(message || '', fileNames, stats);
         setSummaryData((prev) => prev ? { ...prev, parsedData: updatedParsedData, fileStats, rawDiff } : null);
       } else {
-        clearTimeout(timeoutId);
         const errData = await res.json().catch(() => ({ error: 'Failed to fetch commit diff' }));
         throw new Error(errData.error || `HTTP ${res.status}`);
       }
@@ -494,7 +497,9 @@ const GraphInner = ({ elements, repoName, language = 'en', githubToken }: Commit
   const handleCollapseAll = useCallback(() => {
     setUnfurledIds(new Set());
     const firstEl = elements[0];
-    lastFoldedIdRef.current = firstEl.type === 'commit' ? firstEl.data.sha : firstEl.id;
+    if (firstEl) {
+      lastFoldedIdRef.current = firstEl.type === 'commit' ? firstEl.data.sha : firstEl.id;
+    }
   }, [elements]);
 
   if (elements.length === 0) {

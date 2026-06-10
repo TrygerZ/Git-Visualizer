@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Trophy, Minus } from 'lucide-react';
 import { GraphElement } from '../types';
@@ -46,7 +46,7 @@ export const ContributorLeaderboard = ({ nodes, language = 'en' }: ContributorLe
   const [isMinimized, setIsMinimized] = useState(() => (typeof window !== 'undefined' ? window.innerWidth < 768 : false));
   const leaderboardData = useLeaderboardData(nodes);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
       setIsMinimized(true);
     }
@@ -66,7 +66,7 @@ export const ContributorLeaderboard = ({ nodes, language = 'en' }: ContributorLe
             className="flex items-center gap-2 px-4 py-2 bg-surface/80 backdrop-blur-2xl border border-hairline/60 rounded-full shadow-2xl hover:bg-surface-elevated/80 transition-all text-white font-medium"
           >
             <Trophy size={16} className="text-yellow-400" />
-            <span className="text-xs font-bold uppercase tracking-wider text-ash">Leaderboard</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-ash">{language === 'en' ? 'Leaderboard' : 'Papan Peringkat'}</span>
           </motion.button>
         ) : (
           <motion.div
@@ -80,7 +80,7 @@ export const ContributorLeaderboard = ({ nodes, language = 'en' }: ContributorLe
             <div className="flex justify-between items-center px-4 py-3 border-b border-hairline/50 bg-black/20">
               <h3 className="text-xs font-bold text-white uppercase tracking-widest flex items-center gap-2">
                 <Trophy size={14} className="text-yellow-400" />
-                Top Contributors
+                {language === 'en' ? 'Top Contributors' : 'Kontributor Teratas'}
               </h3>
               <button
                 onClick={() => setIsMinimized(true)}
@@ -120,7 +120,7 @@ export const ContributorLeaderboard = ({ nodes, language = 'en' }: ContributorLe
                 </div>
               ))}
               {leaderboardData.length === 0 && (
-                <p className="text-sm text-ash text-center py-4">No contributors found.</p>
+                <p className="text-sm text-ash text-center py-4">{language === 'en' ? 'No contributors found.' : 'Tidak ada kontributor ditemukan.'}</p>
               )}
             </div>
           </motion.div>

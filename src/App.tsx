@@ -11,6 +11,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [language, setLanguage] = useState<'en' | 'id'>('en');
+  const [activeToken, setActiveToken] = useState('');
 
   const t = {
     badge: language === 'en' ? 'Interactive Commit Tree' : 'Pohon Komit Interaktif',
@@ -24,6 +25,7 @@ export default function App() {
   };
 
   const handleSearch = async (url: string, token: string = '') => {
+    setActiveToken(token);
     setLoading(true);
     setError(null);
     try {
@@ -182,8 +184,8 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               className="mt-4 md:mt-12 h-[550px] md:h-[800px]"
             >
-              <ErrorBoundary>
-                <CommitGraph elements={data.elements} repoName={`${data.owner}/${data.repo}`} language={language} />
+              <ErrorBoundary language={language}>
+                <CommitGraph elements={data.elements} repoName={`${data.owner}/${data.repo}`} language={language} githubToken={activeToken} />
               </ErrorBoundary>
             </motion.div>
           ) : !loading && !error && (

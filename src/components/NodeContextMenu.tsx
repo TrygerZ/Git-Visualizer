@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ExternalLink, FileText } from 'lucide-react';
 import { GitCommit } from '../types';
@@ -19,6 +20,21 @@ export function NodeContextMenu({
   onClose,
   onViewSummary,
 }: NodeContextMenuProps) {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleMouseDown);
+      document.addEventListener('keydown', handleKeyDown);
+    }, 0);
+    const handleMouseDown = () => onClose();
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95, y: -10 }}

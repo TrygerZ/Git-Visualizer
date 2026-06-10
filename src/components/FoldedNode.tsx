@@ -1,4 +1,3 @@
-import React from 'react';
 import { Handle, Position, NodeProps, type Node } from '@xyflow/react';
 import { FoldedNode as IFoldedNode } from '../types';
 import { Layers } from 'lucide-react';

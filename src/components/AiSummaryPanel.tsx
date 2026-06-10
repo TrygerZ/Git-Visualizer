@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { X, FileText, ArrowUpRight, Plus, Minus, Layers, Sparkles } from 'lucide-react';
 import { ParsedCommit } from '../lib/commitParser';
@@ -33,6 +33,13 @@ const useAiSummary = (commitSha: string, language: 'en' | 'id') => {
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const controllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      controllerRef.current?.abort();
+    };
+  }, []);
 
   const generateSummary = async (rawDiff: string, message: string) => {
     if (!rawDiff) return;
@@ -47,12 +54,18 @@ const useAiSummary = (commitSha: string, language: 'en' | 'id') => {
       return;
     }
 
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetch("/api/summarize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message, rawDiff, language }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.error || "Failed to generate AI summary");
@@ -60,7 +73,12 @@ const useAiSummary = (commitSha: string, language: 'en' | 'id') => {
       summaryCache.set(cacheKey, { summary: data.summary, timestamp: Date.now() });
       setAiSummary(data.summary);
     } catch (err: unknown) {
-      setAiError(err instanceof Error ? err.message : "An error occurred");
+      clearTimeout(timeoutId);
+      if ((err as Error).name === 'AbortError') {
+        setAiError(language === 'en' ? 'Request timed out after 15s' : 'Permintaan waktu habis setelah 15 detik');
+      } else {
+        setAiError(err instanceof Error ? err.message : "An error occurred");
+      }
     } finally {
       setIsGeneratingAi(false);
     }

@@ -29,7 +29,7 @@ const CONVENTIONAL_TYPES: Record<string, { label: string; emoji: string }> = {
 export const parseCommitData = (
   rawMessage: string,
   filesChanged: string[] = [],
-  stats: { additions: number; deletions: number } = { additions: Math.floor(Math.random() * 200), deletions: Math.floor(Math.random() * 50) }
+  stats: { additions: number; deletions: number } = { additions: 0, deletions: 0 }
 ): ParsedCommit => {
   const lines = rawMessage.trim().split('\n');
   let subject = lines[0] || '';
@@ -89,13 +89,10 @@ export const parseCommitData = (
 
   const issueRegex = /(?:#|GH-)(\d+)/g;
   const issuesFound = new Set<string>();
-  
-  [rawMessage].forEach(text => {
-    let match;
-    while ((match = issueRegex.exec(text)) !== null) {
-      issuesFound.add(match[1]);
-    }
-  });
+  let match;
+  while ((match = issueRegex.exec(rawMessage)) !== null) {
+    issuesFound.add(match[1]);
+  }
 
   let focusArea = 'Mixed / General';
   if (filesChanged.length > 0) {
@@ -118,7 +115,7 @@ export const parseCommitData = (
     if (isFrontend && isBackend) focusArea = 'Fullstack';
     else if (isFrontend) focusArea = 'UI/Frontend';
     else if (isBackend) focusArea = 'Backend/API';
-    else if (isDocs && filesChanged.length === extensionCounts['md'] + (extensionCounts['mdx'] || 0)) focusArea = 'Documentation';
+    else if (isDocs && filesChanged.length === (extensionCounts['md'] || 0) + (extensionCounts['mdx'] || 0)) focusArea = 'Documentation';
   } else {
     // Mock if no files
     if (['feat', 'fix', 'refactor'].includes(type)) {

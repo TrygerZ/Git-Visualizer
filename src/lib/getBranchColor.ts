@@ -1,9 +1,9 @@
 const hashSeedToHue = (seed: string): number => {
   let hash = 0;
   for (let i = 0; i < seed.length; i++) {
-    hash = seed.charCodeAt(i) + ((hash << 5) - hash);
+    hash = (seed.charCodeAt(i) + ((hash << 5) - hash)) >>> 0;
   }
-  return Math.abs(hash) % 360;
+  return hash % 360;
 };
 
 export const getBranchColor = (branchName: string, fallbackId: string = ''): string => {

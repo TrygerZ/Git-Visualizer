@@ -44,7 +44,7 @@ export function useGraphFilter(
 ): FilterResult {
   return useMemo(() => {
     const isSearching = searchQuery.trim().length > 0;
-    const maxIndex = Math.min(playbackIndex, elementsLength + 1);
+    const maxIndex = Math.min(playbackIndex, elementsLength);
 
     const matchedNodeIds = new Set<string>();
     if (isSearching) {
@@ -99,10 +99,7 @@ export function useGraphFilter(
       });
 
     const firstMatch = isSearching
-      ? visibleNodes.find((n) => {
-          const style = n.style as Record<string, unknown> | undefined;
-          return style?.opacity === 1;
-        })
+      ? visibleNodes.find((n) => matchedNodeIds.has(n.id))
       : undefined;
 
     return { visibleNodes, visibleEdges, firstMatch };

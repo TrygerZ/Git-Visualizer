@@ -156,7 +156,8 @@ export function validateGithubUrl(url: string): { owner: string; repo: string } 
   try {
     const urlObj = new URL(!url.startsWith('http') ? `https://${url}` : url);
     const parts = urlObj.pathname.split('/').filter(Boolean);
-    if (!urlObj.hostname.endsWith('github.com') || parts.length < 2) return null;
+    if (urlObj.hostname !== 'github.com' && urlObj.hostname !== 'www.github.com') return null;
+    if (parts.length < 2) return null;
     const owner = parts[0];
     let repo = parts[1];
     if (repo.endsWith('.git')) repo = repo.slice(0, -4);

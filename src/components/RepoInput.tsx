@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Search, Github, Loader2, Key, Settings2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -24,7 +24,7 @@ export const RepoInput = ({ onSearch, isLoading, language = 'en' }: RepoInputPro
     settings: language === 'en' ? 'Advanced Settings' : 'Pengaturan Lanjutan',
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (url.trim()) {
       onSearch(url.trim(), token.trim());

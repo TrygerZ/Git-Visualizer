@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
@@ -17,7 +17,7 @@ interface ContributorPanelProps {
 export const ContributorPanel = ({ contributors, activeContributorName, language = 'en' }: ContributorPanelProps) => {
   const [isMinimized, setIsMinimized] = useState(() => (typeof window !== 'undefined' ? window.innerWidth < 768 : false));
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
       setIsMinimized(true);
     }
@@ -27,7 +27,7 @@ export const ContributorPanel = ({ contributors, activeContributorName, language
     <div className="flex flex-col p-4 bg-surface/80 backdrop-blur-2xl border border-hairline/60 rounded-2xl shadow-2xl transition-all hover:bg-surface-elevated/80 duration-300">
       <div className="flex items-center justify-between pb-2">
         <div className="flex items-center gap-2">
-          <h3 className="text-xs font-semibold text-white/90 uppercase tracking-widest px-1">Contributors</h3>
+          <h3 className="text-xs font-semibold text-white/90 uppercase tracking-widest px-1">{language === 'en' ? 'Contributors' : 'Kontributor'}</h3>
           <span className="text-[10px] bg-white/10 text-white/70 px-2 py-0.5 rounded-full font-medium">{contributors.length}</span>
         </div>
         <button
@@ -58,6 +58,13 @@ export const ContributorPanel = ({ contributors, activeContributorName, language
                       zIndex: isActive ? 50 : 1,
                     }}
                     className="relative group"
+                    role="link"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if ((e.key === 'Enter' || e.key === ' ') && contributor.url) {
+                        window.open(contributor.url, '_blank');
+                      }
+                    }}
                     onClick={() => contributor.url && window.open(contributor.url, '_blank')}
                   >
                     <div
