@@ -1,8 +1,6 @@
-# GitVisualizer — Agent Guide
+# GitVisualizer — Interactive DAG commit graph visualizer for GitHub repos
 
-Interactive DAG commit graph visualizer for GitHub repos.
-
-**Stack:** React 19, Vite 6, Tailwind CSS v4, TypeScript 5, Express 4, `@xyflow/react` 12, ELK layout, Google Gemini AI.
+**Stack:** React 19, Vite 6, Tailwind CSS v4, TypeScript 5, Express 4, @xyflow/react 12, ELKJS, Google Gemini AI, Octokit, motion v12, lucide-react
 
 ## Commands
 
@@ -14,101 +12,78 @@ Interactive DAG commit graph visualizer for GitHub repos.
 | `npm run lint` | `tsc --noEmit` (validates src/ + server.ts) |
 | `npm run clean` | Remove dist/ |
 
-No test framework or test script is configured.
+## Key Conventions
 
-## Project Structure
+- naming: PascalCase components (CommitNode.tsx), camelCase hooks (useElkLayout.ts), camelCase lib/utils
+- styling: Tailwind CSS v4 only — use @import "tailwindcss" (NOT @tailwind base/...)
+- animation: motion/react v12 library (NOT framer-motion)
+- i18n: inline translation objects per component (en={}, id={}), no i18n library
+- errors: try/catch on all async ops, ErrorBoundary wrapping graph area
+- types: zero any in server and hooks — all proper TypeScript interfaces
+- server-routes: Express async handlers with try/catch + centralized error handler
 
-```
-server.ts               Express bootstrap + middleware + routes (thin layer)
+## Project Layout
+
+server.ts              Express entry (routes + middleware + vite middleware)
 src/
-  server/               Server logic modules
-    types.ts            CommitNode, GraphElement, RepoDataResult interfaces
-    cache.ts            Generic CacheStore<T> (5-min TTL, 100-entry max)
-    github.ts           GitHub API, topological sort, foldTopological, branch tracing
-    gemini.ts           AI summarization with tiered model fallback
-  hooks/                React hooks (Clean Code: single responsibility)
-    useElkLayout.ts     ELK graph layout computation
-    useGraphBounds.ts   Bounds + zoom calculation
-    useGraphFilter.ts   Search + playback filtering
-  lib/
-    commitParser.ts     Parse conventional commit messages
-    getBranchColor.ts   Deterministic branch color from name hash
-  components/           11 components
-    CommitGraph.tsx     Main graph orchestration (~540 lines, was 1046)
-    GraphPanels.tsx     All React Flow panel UIs
-    NodeContextMenu.tsx Floating context menu
-    ElkCustomEdge.tsx   Custom edge with rounded polyline
-    CommitNode.tsx      Single commit visual node
-    FoldedNode.tsx      Collapsed linear segment capsule
-    AiSummaryPanel.tsx  AI code review panel (+ hook)
-    ErrorBoundary.tsx   Error boundary wrapping the graph
-    SearchBar.tsx       Animated search input
-    RepoInput.tsx       Repository URL + settings input
-    ContributorPanel.tsx + ContributorLeaderboard.tsx
-  App.tsx               Root component (language toggle, search, error, graph mount)
-  main.tsx              Entry point
-  types.ts              Shared frontend interfaces (GitCommit, FoldedNode, RepoData)
-  index.css             Tailwind v4 imports + theme + React Flow overrides
-index.html              Vite entry HTML
-AGENTS.md               This file
-```
+  server/              Backend API (github.ts, gemini.ts, cache.ts, types.ts)
+  components/          11 React components (CommitGraph orchestrator, panels, nodes)
+  hooks/               3 custom hooks (useElkLayout, useGraphBounds, useGraphFilter)
+  lib/                 2 utilities (commitParser, getBranchColor)
+  App.tsx              Root component (search, language toggle, error, graph mount)
+  types.ts             Shared frontend interfaces
+  index.css            Tailwind v4 imports + theme + React Flow overrides
 
 ## Critical Gotchas
 
-- **Tailwind v4** syntax: use `@import "tailwindcss"`, NOT `@tailwind base/...`
-- **`motion`** library (v12), not framer-motion — import from `'motion/react'`
-- **`@xyflow/react`** (v12), not the older `reactflow` package
-- **No ESLint, Prettier, or Biome** — only `tsc --noEmit` for validation
-- **No test framework** exists — add from scratch if needed
-- **Bilingual UI** via inline translation objects per component (en/id), no i18n library
-- **Gemini API** requires `GEMINI_API_KEY` env var for AI summaries
-- **Server listens on `0.0.0.0`** (all interfaces)
-- **NODE_ENV** is set by scripts: `npm run dev` → development, `npm start` → production
-- **In-memory cache** (`src/server/cache.ts`) — generic CacheStore<T> with 5-min TTL, 100-entry max
-- **Zero `any` types** in server code and hooks — all proper TypeScript interfaces
-- **cross-env** required for cross-platform NODE_ENV in start script
-
-## Build Quirks
-
-- Dev: `set NODE_ENV=development&& tsx server.ts` (Windows CMD — npm uses CMD by default)
-- Prod: `vite build` (frontend to dist/) + `esbuild server.ts --bundle --platform=node --format=cjs --packages=external` to dist/server.cjs
-- No sourcemaps in production build
-- Server expects node_modules at runtime in production
-
-## Security
-
-- **Helmet** middleware with CSP (img-src includes avatars.githubusercontent.com)
-- **Body size limited** to 1mb (prevents DoS)
-- **Rate limiters** (express-rate-limit): `/api/summarize` 10/min, `/api/repo` 30/min, `/api/commit-diff` 60/min
-- **Input validation** on all string parameters (length-bounded)
-- **SSRF protection** via `endsWith('github.com')` hostname check
-- **Global error handler** catches unhandled errors, returns generic messages
-- **No credential leakage** — error.message never sent to client
+- tailwind-v4: use @import "tailwindcss" (NOT @tailwind base/...)
+- animation: use motion/react v12 (NOT framer-motion)
+- react-flow: use @xyflow/react v12 (NOT reactflow)
+- validation: tsc --noEmit only (NO ESLint, Prettier, or Biome)
+- testing: no test framework configured
+- i18n: inline translation objects per component (no i18n library)
+- gemini: requires GEMINI_API_KEY env var
+- server-host: listens on 0.0.0.0 (all interfaces)
+- node-env: set via npm scripts (development/production)
+- cache: in-memory CacheStore<T> (5-min TTL, 100-entry max, lost on restart)
+- cross-env: required for cross-platform NODE_ENV in start script
+- path-alias: @/ maps to project root (tsconfig + vite config)
 
 ## Data Flow
 
-1. `GET /api/repo?url=...` → GitHub API → topological sort → `foldTopological` (linear segment folding) → ELK layout (client-side) → React Flow rendering
-2. `GET /api/commit-diff?repo=...&commitId=...` → GitHub API → diff display + AI summarization
-3. `POST /api/summarize` → Gemini API (tiered model fallback: 2.5-flash → 2.0-flash → 1.5-flash)
-4. AbortController + 15s timeout on all frontend fetch calls
-5. Prompt injection protection via `[COMMIT_MESSAGE_START]/[COMMIT_MESSAGE_END]` delimiters
+1. GET /api/repo?url=... → GitHub API (Octokit) → topological sort → foldTopological → ELK layout (client) → React Flow render
+2. GET /api/commit-diff?repo=...&commitId=... → GitHub API → diff + AI summary
+3. POST /api/summarize → Gemini AI (tiered fallback: 2.5-flash → 2.0-flash → 1.5-flash)
+4. Frontend fetch: AbortController + 15s timeout on all calls
+5. Prompt injection protection: [COMMIT_MESSAGE_START]/[COMMIT_MESSAGE_END] delimiters
+
+## API Endpoints
+
+- GET /api/repo — rate: 30/min — fetch repo commits + topology
+- GET /api/commit-diff — rate: 60/min — fetch commit diff (+AI summary)
+- POST /api/summarize — rate: 10/min — AI summary via Gemini
+- Demo: /api/repo?url=https://github.com/demo/rate-limit&demo=true — mock data for UI testing
+
+## Security
+
+- helmet: CSP headers (img-src includes avatars.githubusercontent.com)
+- rate-limit: per-endpoint (10/30/60 per min)
+- ssrf: hostname must endWith('github.com')
+- input-validation: all string params length-bounded
+- no-credential-leakage: error.message never sent to client
 
 ## Debugging
 
-- **`tsc --noEmit`** validates both `src/` and `server.ts` (via `"include": ["src", "server.ts"]`)
-- **Centralized error handler** catches unhandled Express errors
-- **No React ErrorBoundary** — errors are caught only at App level via try/catch. Wrap graph area in ErrorBoundary for resilience.
-- **Logging** uses raw `console.log/warn/error` — no structured logger. Add server-side request logging when debugging API issues.
-- **Gemini API fallback:** Model tries `2.5-flash` → `2.0-flash` → `1.5-flash`. Each failure logs `[TIER N]` prefix via console.warn.
-- **In-memory cache:** `src/server/cache.ts` — `CacheStore<T>` with TTL + LRU eviction. Lost on restart.
-- **`tsx` remote inspect:** `npx tsx --inspect server.ts` for Node.js inspector debugging
-- **TypeScript:** `tsconfig.json` has `"include": ["src", "server.ts"]` — server code is type-checked
+- lint: tsc --noEmit validates src/ + server.ts
+- logging: console.{log/warn/error} only (no structured logger)
+- gemini-fallback: logs [TIER N] prefix per model failure
+- cache: lost on server restart (in-memory)
+- inspect: npx tsx --inspect server.ts for Node.js debugger
+- rate-limit-test: hit /api/repo without PAT to trigger rate-limit banner
 
-## Testing
+## Build
 
-No test framework is configured. To add tests:
-
-- **Frontend:** Install vitest + @testing-library/react (project uses Vite, so vitest integrates naturally)
-- **Backend:** Use node:test, vitest, or jest
-- **Demo route:** `GET /api/repo?url=https://github.com/demo/rate-limit&demo=true` returns mock data — useful for UI testing without hitting GitHub API
-- **Rate-limit testing:** Hit `/api/repo` without a PAT to trigger the rate-limit error banner UI
+- dev: cross-env NODE_ENV=development tsx server.ts (port 3000)
+- prod: vite build → esbuild server bundle → cross-env NODE_ENV=production node dist/server.cjs
+- sourcemaps: NOT generated in production build
+- runtime: server expects node_modules in production

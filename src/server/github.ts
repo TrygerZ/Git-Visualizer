@@ -209,10 +209,13 @@ export function toCommitNode(raw: RawCommit): CommitNode {
 export function resolveBranchNames(
   nodes: CommitNode[],
   branchesRaw: RawBranch[],
-  defaultBranch: string
+  defaultBranch: string,
+  commitBranchMap?: Map<string, Set<string>>
 ): CommitNode[] {
   const updated = nodes.map(n => ({ ...n }));
   const nodeMap = new Map(updated.map(n => [n.sha, n]));
+
+  // 1. Walk default branch chain (existing logic)
   const head = branchesRaw.find(b => b.name === defaultBranch);
   const startSha = head?.commit?.sha || updated[0]?.sha;
   let current = nodeMap.get(startSha);
@@ -220,13 +223,31 @@ export function resolveBranchNames(
     current.branch = defaultBranch;
     current = nodeMap.get(current.parents[0]);
   }
+
+  // 2. Walk backward from each non-default branch HEAD (Fix A)
   for (const b of branchesRaw) {
+    if (b.name === defaultBranch) continue;
     if (!b.commit?.sha) continue;
-    const node = nodeMap.get(b.commit.sha);
-    if (node && node.branch !== defaultBranch) {
-      node.branch = b.name;
+    let current = nodeMap.get(b.commit.sha);
+    while (current) {
+      if (current.branch !== 'unknown') break;
+      current.branch = b.name;
+      current = nodeMap.get(current.parents[0]);
     }
   }
+
+  // 3. Fallback: use provenance data for remaining unknowns (Fix B)
+  if (commitBranchMap) {
+    for (const node of updated) {
+      if (node.branch !== 'unknown') continue;
+      const branches = commitBranchMap.get(node.sha);
+      if (branches && branches.size > 0) {
+        const nonDefault = [...branches].filter(b => b !== defaultBranch);
+        node.branch = nonDefault.length > 0 ? nonDefault[0] : [...branches][0];
+      }
+    }
+  }
+
   return updated;
 }
 
@@ -238,7 +259,16 @@ export async function fetchRepoData(
   const { data: repoDetails } = await octokit.rest.repos.get({ owner, repo });
   const defaultBranch = repoDetails.default_branch;
   const { data: branchesRaw } = await octokit.rest.repos.listBranches({ owner, repo, per_page: 5 });
+
+  // Fix B: Track which branch each commit came from
+  const commitBranchMap = new Map<string, Set<string>>();
+
   const defaultCommits = await fetchBranchCommits(octokit, owner, repo, defaultBranch, 3);
+  for (const c of defaultCommits) {
+    if (!commitBranchMap.has(c.sha)) commitBranchMap.set(c.sha, new Set());
+    commitBranchMap.get(c.sha)!.add(defaultBranch);
+  }
+
   const otherBranches = branchesRaw
     .map(b => b.name)
     .filter(n => n !== defaultBranch)
@@ -247,12 +277,16 @@ export async function fetchRepoData(
   for (const branchName of otherBranches) {
     const commits = await fetchBranchCommits(octokit, owner, repo, branchName, 3);
     allCommitBatches.push(...commits);
+    for (const c of commits) {
+      if (!commitBranchMap.has(c.sha)) commitBranchMap.set(c.sha, new Set());
+      commitBranchMap.get(c.sha)!.add(branchName);
+    }
   }
   const seen = new Map<string, RawCommit>();
   for (const c of allCommitBatches) seen.set(c.sha, c);
   const commitsRaw = Array.from(seen.values());
   let nodes = commitsRaw.map(toCommitNode);
-  nodes = resolveBranchNames(nodes, branchesRaw as unknown as RawBranch[], defaultBranch);
+  nodes = resolveBranchNames(nodes, branchesRaw as unknown as RawBranch[], defaultBranch, commitBranchMap);
   try {
     nodes = topologicalSort(nodes);
   } catch (error: unknown) {
