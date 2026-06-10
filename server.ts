@@ -3,6 +3,10 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { Octokit } from "octokit";
 import dotenv from "dotenv";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import { fetchCommitDiff, RawCommit } from "./src/server/github";
+import { CommitNode, GraphElement } from "./src/server/types";
 
 dotenv.config();
 
@@ -10,18 +14,17 @@ const octokit = new Octokit({
   auth: process.env.GITHUB_TOKEN,
 });
 
-function foldTopological(commits: any[]) {
+function foldTopological(commits: CommitNode[]): GraphElement[] {
   if (commits.length === 0) return [];
 
-  const commitMap = new Map<string, any>();
+  const commitMap = new Map<string, CommitNode>();
   commits.forEach(c => commitMap.set(c.sha, { ...c, children: [] }));
 
-  // Build the full graph (parents and children)
   commits.forEach(c => {
     c.parents.forEach((parentSha: string) => {
       const parent = commitMap.get(parentSha);
       if (parent) {
-        parent.children.push(c.sha);
+        parent.children!.push(c.sha);
       }
     });
   });
@@ -29,43 +32,44 @@ function foldTopological(commits: any[]) {
   const isCritical = (sha: string) => {
     const c = commitMap.get(sha);
     if (!c) return true;
-    // Critical if: merge, branch point, tip, or root
-    return c.parents.length !== 1 || c.children.length !== 1;
+    return c.parents.length !== 1 || (c.children?.length ?? 0) !== 1;
   };
 
   const processed = new Set<string>();
-  const elements: any[] = [];
+  const elements: GraphElement[] = [];
 
   commits.forEach(commit => {
     if (processed.has(commit.sha)) return;
 
     if (isCritical(commit.sha)) {
-      elements.push({ type: 'commit', data: commitMap.get(commit.sha) });
+      const node = commitMap.get(commit.sha);
+      if (node) {
+        elements.push({ type: 'commit', data: node });
+      }
       processed.add(commit.sha);
     } else {
-      // Start of a potential linear segment
-      const segment: any[] = [];
+      const segment: CommitNode[] = [];
       let current = commitMap.get(commit.sha);
       
-      // Move backwards to the start of the linear segment
       while (current && !isCritical(current.sha)) {
         segment.unshift(current);
         processed.add(current.sha);
-        // Since it's linear, it has exactly one parent
         current = commitMap.get(current.parents[0]);
-        // If the parent we just reached is critical, we stop
         if (current && isCritical(current.sha)) break;
       }
 
-      // Move forwards from the initial commit to the end of the segment
       current = commitMap.get(commit.sha);
+      if (!current || !current.children || current.children.length === 0) {
+        processed.add(commit.sha);
+        return;
+      }
       let nextSha = current.children[0];
       let next = commitMap.get(nextSha);
       while (next && !isCritical(next.sha)) {
         if (processed.has(next.sha)) break;
         segment.push(next);
         processed.add(next.sha);
-        nextSha = next.children[0];
+        nextSha = next.children![0];
         next = commitMap.get(nextSha);
         if (next && isCritical(next.sha)) break;
       }
@@ -75,8 +79,8 @@ function foldTopological(commits: any[]) {
           type: 'folded',
           id: `folded-${segment[0].sha}`,
           commits: segment,
-          parents: [segment[0].parents[0]], // Link to the actual parent before the segment
-          children: [segment[segment.length - 1].children[0]] // Link to the child after the segment
+          parents: segment[0].parents[0] ? [segment[0].parents[0]] : [],
+          children: (segment[segment.length - 1].children ?? [])[0] ? [(segment[segment.length - 1].children ?? [])[0]] : []
         });
       } else if (segment.length === 1) {
         elements.push({ type: 'commit', data: segment[0] });
@@ -91,8 +95,19 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  app.use(express.json({ limit: "1mb" }));
+  app.use(express.urlencoded({ limit: "1mb", extended: true }));
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "avatars.githubusercontent.com"],
+        connectSrc: ["'self'", "ws:", "https://api.github.com"],
+      },
+    },
+  }));
 
   // API Route: Fetch Repo Data
   app.get("/api/repo", async (req, res) => {
@@ -180,10 +195,11 @@ async function startServer() {
             }
             if (branchCommits.length < 100) break; // no more pages
           }
-        } catch (err: any) {
+        } catch (error: unknown) {
+          const err = error as { status?: number; message?: string };
           console.warn(`Failed fetching commits for ${shaOrBranch}`, err.message);
           if (err.status === 403 || err.status === 429) {
-             throw err;
+             throw error;
           }
         }
       };
@@ -191,7 +207,7 @@ async function startServer() {
       await fetchCommits(defaultBranch, 3);
       
       const otherBranches = branchesRaw
-        .map((b: any) => b.name)
+        .map((b: { name: string }) => b.name)
         .filter((n: string) => n !== defaultBranch)
         .slice(0, 4);
         
@@ -202,11 +218,11 @@ async function startServer() {
       const commitsRaw = Array.from(commitsMap.values());
 
       const nodesMap = new Map<string, any>();
-      const nodes = commitsRaw.map((commit: any) => {
+      const nodes = commitsRaw.map((commit: RawCommit) => {
         const node = {
           id: commit.sha,
           sha: commit.sha,
-          parents: commit.parents.map((p: any) => p.sha),
+          parents: commit.parents.map((p: { sha: string }) => p.sha),
           message: commit.commit.message,
           author: commit.author?.login || commit.commit.author.name,
           author_avatar: commit.author?.avatar_url,
@@ -232,7 +248,7 @@ async function startServer() {
       }
       
       // Refine with actual branch names if they match branch heads
-      branchesRaw.forEach((b: any) => {
+      branchesRaw.forEach((b: { name: string; commit: { sha: string } }) => {
         const node = nodesMap.get(b.commit.sha);
         if (node) {
           node.branch = b.name;
@@ -246,20 +262,47 @@ async function startServer() {
         repo,
         elements: foldTopological(nodes)
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("GitHub API Error:", error);
-      if (error.status === 401) {
+      const err = error as { status?: number; message?: string };
+      if (err.status === 401) {
         return res.status(401).json({ error: "Token GitHub (PAT) yang Anda masukkan tidak valid (Unauthorized)." });
       }
-      if (error.status === 404) {
+      if (err.status === 404) {
         return res.status(404).json({ error: "Repository not found or is private" });
       }
-      if (error.status === 403 || error.status === 429) {
-        return res.status(error.status).json({ error: "Batas permintaan (Rate Limit) GitHub API tercapai. Anda bisa menggunakan GitHub Personal Access Token (PAT) Anda sendiri lewat tombol Setting di samping tombol Visualize." });
+      if (err.status === 403 || err.status === 429) {
+        return res.status(err.status).json({ error: "Batas permintaan (Rate Limit) GitHub API tercapai. Anda bisa menggunakan GitHub Personal Access Token (PAT) Anda sendiri lewat tombol Setting di samping tombol Visualize." });
       }
       res.status(500).json({ error: "Failed to fetch repository data" });
     }
   });
+
+    const commitDiffLimiter = rateLimit({
+      windowMs: 60 * 1000,
+      max: 60,
+      message: { error: 'Too many requests, please try again later.' },
+    });
+
+    app.get('/api/commit-diff', commitDiffLimiter, async (req, res) => {
+      try {
+        const repo = String(req.query.repo || '');
+        const commitId = String(req.query.commitId || '');
+        const token = (req.headers['x-github-token'] as string) || '';
+        const parts = repo.split('/');
+        if (parts.length !== 2) {
+          return res.status(400).json({ error: 'Invalid repo format. Use owner/repo' });
+        }
+        const [owner, repoName] = parts;
+        const currentOctokit = new Octokit({ auth: token || process.env.GITHUB_TOKEN });
+        const diff = await fetchCommitDiff(currentOctokit, owner, repoName, commitId);
+        res.json(diff);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        console.error('Failed to fetch commit diff:', message);
+        res.status(500).json({ error: 'Gagal mengambil diff commit' });
+      }
+    });
 
     // API Route: AI Summarize
     app.post("/api/summarize", async (req, res) => {
@@ -322,25 +365,28 @@ Balas HANYA dengan format Markdown standar berikut tanpa teks pengantar, gunakan
         let summary = "";
         try {
           summary = await tryModel("gemini-2.5-flash");
-        } catch (errTier1: any) {
-          console.warn(`[TIER 1] gemini-2.5-flash failed:`, errTier1.message);
+        } catch (errTier1: unknown) {
+          const msg1 = errTier1 instanceof Error ? errTier1.message : 'Unknown error';
+          console.warn(`[TIER 1] gemini-2.5-flash failed:`, msg1);
           try {
             summary = await tryModel("gemini-2.0-flash");
-          } catch (errTier2: any) {
-            console.warn(`[TIER 2] gemini-2.0-flash failed:`, errTier2.message);
+          } catch (errTier2: unknown) {
+            const msg2 = errTier2 instanceof Error ? errTier2.message : 'Unknown error';
+            console.warn(`[TIER 2] gemini-2.0-flash failed:`, msg2);
             try {
               summary = await tryModel("gemini-1.5-flash");
-            } catch (errTier3: any) {
-              console.warn(`[TIER 3] gemini-1.5-flash failed:`, errTier3.message);
-              summary = `⚠️ **AI Review Unavailable**: Please check that your Gemini API key in the **Settings > Secrets** panel is valid. Original error: ${errTier1.message}`;
+            } catch (errTier3: unknown) {
+              const msg3 = errTier3 instanceof Error ? errTier3.message : 'Unknown error';
+              console.warn(`[TIER 3] gemini-1.5-flash failed:`, msg3);
+              summary = `⚠️ **AI Review Unavailable**: Please check that your Gemini API key in the **Settings > Secrets** panel is valid.`;
             }
           }
         }
 
         res.json({ summary });
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("AI summarization error:", error);
-        res.status(500).json({ error: error.message || "Failed to generate AI summary" });
+        res.status(500).json({ error: "Failed to generate AI summary" });
       }
     });
 

@@ -9,7 +9,7 @@ function matchNode(node: Node, query: string): boolean {
 
   if (node.type === 'commit') {
     const commit = data.commit as GitCommit | undefined;
-    return (
+    return !!(
       commit?.message?.toLowerCase().includes(lowerQuery) ||
       commit?.author?.toLowerCase().includes(lowerQuery) ||
       commit?.sha?.toLowerCase().includes(lowerQuery)

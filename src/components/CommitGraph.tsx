@@ -17,10 +17,18 @@ import { NodeContextMenu } from './NodeContextMenu';
 import { motion, AnimatePresence } from 'motion/react';
 import { parseCommitData, ParsedCommit } from '../lib/commitParser';
 import { getBranchColor } from '../lib/getBranchColor';
-import { AiSummaryPanel } from './AiSummaryPanel';
+import { AiSummaryPanel, type FileStat } from './AiSummaryPanel';
 import { useElkLayout } from '../hooks/useElkLayout';
 import { useGraphFilter } from '../hooks/useGraphFilter';
 import { useGraphBounds } from '../hooks/useGraphBounds';
+
+interface CommitFile {
+  filename: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  patch?: string;
+}
 
 interface CommitGraphProps {
   elements: GraphElement[];
@@ -260,7 +268,7 @@ const GraphInner = ({ elements, repoName, language = 'en', githubToken }: Commit
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [summaryData, setSummaryData] = useState<{
     repoName: string; commitSha: string; branch: string; githubUrl: string;
-    message: string; parsedData: ParsedCommit; fileStats?: any[];
+    message: string; parsedData: ParsedCommit; fileStats?: FileStat[];
     rawDiff: string; diffError?: string;
   } | null>(null);
   const [sliderX, setSliderX] = useState(0);
@@ -376,13 +384,13 @@ const GraphInner = ({ elements, repoName, language = 'en', githubToken }: Commit
             { zoom: resultBounds.optimalZoom, duration: 800 }
           );
         }
-      } catch {
-        if (!cancelled) console.error('Layout failed:', layoutError);
+      } catch (e) {
+        if (!cancelled) console.error('Layout failed:', e);
       }
     };
     performLayout();
     return () => { cancelled = true; };
-  }, [elements, unfurledIds, layoutDirection, runLayout, computeBounds, setCenter, language, layoutError]);
+  }, [elements, unfurledIds, layoutDirection, runLayout, computeBounds, setCenter, language]);
 
   useEffect(() => {
     const isHorizontal = layoutDirection === 'RIGHT';
@@ -456,12 +464,13 @@ const GraphInner = ({ elements, repoName, language = 'en', githubToken }: Commit
       clearTimeout(timeoutId);
       if (res.ok) {
         const data = await res.json();
-        const validFiles = (data.files as any[])?.filter((f: any) => f.patch) || [];
+        const allFiles = data.files as CommitFile[];
+        const validFiles = allFiles?.filter((f: CommitFile) => f.patch) || [];
         const rawDiff = validFiles
-          .map((f: any) => `diff --git a/${f.filename} b/${f.filename}\n--- a/${f.filename}\n+++ b/${f.filename}\n${f.patch}`)
+          .map((f: CommitFile) => `diff --git a/${f.filename} b/${f.filename}\n--- a/${f.filename}\n+++ b/${f.filename}\n${f.patch}`)
           .join('\n');
-        const fileStats = (data.files as any[])?.map((f: any) => ({ name: f.filename, status: f.status, add: f.additions, del: f.deletions })) || [];
-        const fileNames = (data.files as any[])?.map((f: any) => f.filename) || [];
+        const fileStats = allFiles?.map((f: CommitFile) => ({ name: f.filename, status: f.status, add: f.additions, del: f.deletions })) || [];
+        const fileNames = allFiles?.map((f: CommitFile) => f.filename) || [];
         const stats = { additions: data.stats?.additions || 0, deletions: data.stats?.deletions || 0 };
         const updatedParsedData = parseCommitData(message || '', fileNames, stats);
         setSummaryData((prev) => prev ? { ...prev, parsedData: updatedParsedData, fileStats, rawDiff } : null);
@@ -498,6 +507,11 @@ const GraphInner = ({ elements, repoName, language = 'en', githubToken }: Commit
 
   return (
     <div className="w-full h-full border border-hairline rounded-2xl overflow-hidden bg-surface relative">
+      {layoutError && (
+        <div className="absolute top-0 left-0 right-0 z-50 bg-rose-500/10 border-b border-rose-500/30 px-4 py-2 text-xs text-rose-400 text-center">
+          Layout error: {layoutError}
+        </div>
+      )}
       <ReactFlow
         nodes={visibleNodes}
         edges={visibleEdges}

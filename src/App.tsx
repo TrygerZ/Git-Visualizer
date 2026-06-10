@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { RepoInput } from './components/RepoInput';
 import { CommitGraph } from './components/CommitGraph';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { RepoData } from './types';
 import { motion, AnimatePresence } from 'motion/react';
 import { AlertCircle, GitGraph as GraphIcon, ArrowRight, Github, Key, Languages } from 'lucide-react';
@@ -60,11 +61,12 @@ export default function App() {
       }
 
       setData(result);
-    } catch (err: any) {
-      if (err.message === 'Batas permintaan') {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'An unexpected error occurred';
+      if (message === 'Batas permintaan') {
           setError(language === 'en' ? 'GitHub API rate limit exceeded. You can use your own GitHub Personal Access Token (PAT) via the Settings button next to the Visualize button.' : 'Batas permintaan (Rate Limit) GitHub API tercapai. Anda bisa menggunakan GitHub Personal Access Token (PAT) Anda sendiri lewat tombol Setting di samping tombol Visualize.');
       } else {
-          setError(err.message);
+          setError(message);
       }
       setData(null);
     } finally {
@@ -180,7 +182,9 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               className="mt-4 md:mt-12 h-[550px] md:h-[800px]"
             >
-              <CommitGraph elements={data.elements} repoName={`${data.owner}/${data.repo}`} language={language} />
+              <ErrorBoundary>
+                <CommitGraph elements={data.elements} repoName={`${data.owner}/${data.repo}`} language={language} />
+              </ErrorBoundary>
             </motion.div>
           ) : !loading && !error && (
             <motion.div

@@ -1,7 +1,7 @@
 import { Octokit } from "octokit";
 import { CommitNode, GraphElement, RepoDataResult } from "./types";
 
-interface RawCommit {
+export interface RawCommit {
   sha: string;
   commit: {
     message: string;
@@ -162,6 +162,7 @@ export function validateGithubUrl(url: string): { owner: string; repo: string } 
     if (repo.endsWith('.git')) repo = repo.slice(0, -4);
     return { owner, repo };
   } catch {
+    console.warn('validateGithubUrl: Invalid URL');
     return null;
   }
 }
@@ -252,7 +253,9 @@ export async function fetchRepoData(
   nodes = resolveBranchNames(nodes, branchesRaw as unknown as RawBranch[], defaultBranch);
   try {
     nodes = topologicalSort(nodes);
-  } catch {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.warn('Topological sort failed, falling back to date sort:', message);
     nodes.sort((a, b) => new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime());
   }
   return { owner, repo, elements: foldTopological(nodes) };

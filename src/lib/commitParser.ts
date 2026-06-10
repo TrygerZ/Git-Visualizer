@@ -122,8 +122,7 @@ export const parseCommitData = (
   } else {
     // Mock if no files
     if (['feat', 'fix', 'refactor'].includes(type)) {
-      const areas = ['UI/Frontend', 'Backend/API', 'Fullstack'];
-      focusArea = areas[Math.floor(Math.random() * areas.length)];
+      focusArea = 'general';
     } else if (type === 'docs') {
       focusArea = 'Documentation';
     } else if (type === 'build' || type === 'ci') {
