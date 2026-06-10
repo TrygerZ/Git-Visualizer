@@ -39,9 +39,10 @@ export function useLeaderboardData(nodes: GraphElement[]) {
 
 interface ContributorLeaderboardProps {
   nodes: GraphElement[];
+  language?: 'en' | 'id';
 }
 
-export const ContributorLeaderboard = ({ nodes }: ContributorLeaderboardProps) => {
+export const ContributorLeaderboard = ({ nodes, language = 'en' }: ContributorLeaderboardProps) => {
   const [isMinimized, setIsMinimized] = useState(() => (typeof window !== 'undefined' ? window.innerWidth < 768 : false));
   const leaderboardData = useLeaderboardData(nodes);
 

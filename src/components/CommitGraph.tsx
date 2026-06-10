@@ -1,932 +1,560 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import {
   ReactFlow,
-  Background,
-  Controls,
-  Panel,
-  Edge,
   Node,
+  Edge,
   useReactFlow,
   ReactFlowProvider,
   Position,
-  BaseEdge,
-  EdgeProps,
-  getSmoothStepPath
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import ELK from 'elkjs/lib/elk.bundled.js';
 import { GitCommit, GraphElement, FoldedNode as IFoldedNode } from '../types';
 import { CommitNode } from './CommitNode';
 import { FoldedNode } from './FoldedNode';
-import { Info, Play, Pause, RotateCcw, Clock, Minimize2, User, ExternalLink, X, FileText } from 'lucide-react';
-import Markdown from 'react-markdown';
+import { ElkCustomEdge } from './ElkCustomEdge';
+import { GraphPanels } from './GraphPanels';
+import { NodeContextMenu } from './NodeContextMenu';
 import { motion, AnimatePresence } from 'motion/react';
-import { ContributorPanel } from './ContributorPanel';
-import { ContributorLeaderboard } from './ContributorLeaderboard';
-import { SearchBar } from './SearchBar';
 import { parseCommitData, ParsedCommit } from '../lib/commitParser';
+import { getBranchColor } from '../lib/getBranchColor';
 import { AiSummaryPanel } from './AiSummaryPanel';
+import { useElkLayout } from '../hooks/useElkLayout';
+import { useGraphFilter } from '../hooks/useGraphFilter';
+import { useGraphBounds } from '../hooks/useGraphBounds';
 
 interface CommitGraphProps {
   elements: GraphElement[];
   repoName: string;
   language?: 'en' | 'id';
+  githubToken?: string;
 }
 
-const filterPoints = (points: {x: number, y: number}[]) => {
-  if (points.length === 0) return points;
-  const result = [points[0]];
-  for (let i = 1; i < points.length; i++) {
-    const p = points[i];
-    const prev = result[result.length - 1];
-    if (Math.abs(p.x - prev.x) > 0.1 || Math.abs(p.y - prev.y) > 0.1) {
-      result.push(p);
+type NodeMapValue = string | { first: string; last: string };
+
+interface BuildNodesResult {
+  nodes: Node[];
+  nodeMap: Map<string, NodeMapValue>;
+}
+
+function addUnfurledFoldedNodes(
+  el: GraphElement & { type: 'folded' },
+  index: number,
+  toggleUnfurl: (id: string) => void,
+  language: 'en' | 'id',
+  nodes: Node[],
+  nodeMap: Map<string, NodeMapValue>
+): void {
+  el.commits.forEach((commit) => {
+    const nodeId = `commit-${commit.sha}`;
+    nodes.push({ id: nodeId, type: 'commit', position: { x: 0, y: 0 },
+      sourcePosition: Position.Right, targetPosition: Position.Left,
+      data: { commit, onFold: () => toggleUnfurl(el.id), elementIndex: index, language } });
+    nodeMap.set(commit.sha, nodeId);
+  });
+  if (el.commits.length > 0) {
+    const first = `commit-${el.commits[0].sha}`;
+    const last = `commit-${el.commits[el.commits.length - 1].sha}`;
+    nodeMap.set(el.id, { first, last });
+  }
+}
+
+function addRegularNode(
+  el: GraphElement,
+  index: number,
+  toggleUnfurl: (id: string) => void,
+  language: 'en' | 'id',
+  nodes: Node[],
+  nodeMap: Map<string, NodeMapValue>
+): void {
+  const id = el.type === 'commit' ? el.data.sha : el.id;
+  nodes.push({
+    id,
+    type: el.type,
+    position: { x: 0, y: 0 },
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
+    data:
+      el.type === 'commit'
+        ? { commit: el.data, elementIndex: index, language }
+        : { folded: el, onUnfold: () => toggleUnfurl(el.id), elementIndex: index, language },
+  });
+  nodeMap.set(id, id);
+  if (el.type === 'folded') {
+    el.commits.forEach((c) => nodeMap.set(c.sha, id));
+  }
+}
+
+function buildNodes(
+  elements: GraphElement[],
+  unfurledIds: Set<string>,
+  toggleUnfurl: (id: string) => void,
+  language: 'en' | 'id'
+): BuildNodesResult {
+  const nodes: Node[] = [];
+  const nodeMap = new Map<string, NodeMapValue>();
+
+  elements.forEach((el, index) => {
+    if (el.type === 'folded' && unfurledIds.has(el.id)) {
+      addUnfurledFoldedNodes(el, index, toggleUnfurl, language, nodes, nodeMap);
+    } else {
+      addRegularNode(el, index, toggleUnfurl, language, nodes, nodeMap);
     }
-  }
-  return result;
-};
-
-const roundedPolyline = (rawPoints: {x: number, y: number}[], r: number) => {
-  const points = filterPoints(rawPoints);
-  if (points.length < 2) return '';
-  let d = `M ${points[0].x} ${points[0].y}`;
-  for (let i = 1; i < points.length - 1; i++) {
-    const p1 = points[i - 1];
-    const p2 = points[i];
-    const p3 = points[i + 1];
-
-    const dx1 = p1.x - p2.x;
-    const dy1 = p1.y - p2.y;
-    const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
-
-    const dx2 = p3.x - p2.x;
-    const dy2 = p3.y - p2.y;
-    const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
-
-    if (len1 === 0 || len2 === 0) {
-       d += ` L ${p2.x} ${p2.y}`;
-       continue;
-    }
-
-    const radius = Math.min(r, len1 / 2, len2 / 2);
-    if (radius < 1) {
-      d += ` L ${p2.x} ${p2.y}`;
-      continue;
-    }
-
-    const p2p1Ratio = radius / len1;
-    const p2p3Ratio = radius / len2;
-
-    const startX = p2.x + dx1 * p2p1Ratio;
-    const startY = p2.y + dy1 * p2p1Ratio;
-
-    const endX = p2.x + dx2 * p2p3Ratio;
-    const endY = p2.y + dy2 * p2p3Ratio;
-
-    d += ` L ${startX} ${startY}`;
-    d += ` Q ${p2.x} ${p2.y} ${endX} ${endY}`;
-  }
-  
-  const last = points[points.length - 1];
-  d += ` L ${last.x} ${last.y}`;
-  return d;
-};
-
-export const ElkCustomEdge = ({
-  id,
-  style,
-  markerEnd,
-  animated,
-  data,
-}: EdgeProps) => {
-  const layoutedEdge = data?.layoutedEdge as any;
-
-  let pathData = '';
-  if (layoutedEdge?.sections?.length > 0) {
-    const section = layoutedEdge.sections[0];
-    const { startPoint, bendPoints = [], endPoint } = section;
-    const points = [startPoint, ...bendPoints, endPoint];
-    pathData = roundedPolyline(points, 15);
-  }
-
-  return (
-    <BaseEdge 
-      id={id} 
-      path={pathData} 
-      style={style} 
-      markerEnd={markerEnd} 
-      className={animated ? "react-flow__edge-path animated" : "react-flow__edge-path"} 
-    />
-  );
-};
-
-const nodeTypes = {
-  commit: CommitNode,
-  folded: FoldedNode,
-};
-
-export const getBranchColor = (branchName: string, fallbackId: string = '') => {
-  if (branchName === 'main' || branchName === 'master') return '#3b82f6';
-  if (branchName === 'develop') return '#10b981';
-
-  const seed = (branchName === 'commit' || branchName === 'unknown') && fallbackId ? fallbackId : branchName;
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = seed.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return `hsl(${Math.abs(hash) % 360}, 70%, 55%)`;
-};
-
-const edgeTypes = {
-  elk: ElkCustomEdge,
-};
-
-const elk = new ELK();
-
-const getLayoutedElements = async (nodes: Node[], edges: Edge[], direction: 'RIGHT' | 'DOWN' = 'RIGHT') => {
-  const isHorizontal = direction === 'RIGHT';
-
-  const graph: any = {
-    id: 'root',
-    layoutOptions: {
-      'elk.algorithm': 'layered',
-      'elk.direction': direction,
-      'elk.edgeRouting': 'ORTHOGONAL',
-      'elk.layered.mergeEdges': 'false',
-      'elk.portConstraints': 'FIXED_SIDE',
-      'elk.spacing.portPort': '15',
-      'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
-      'elk.layered.nodePlacement.favorStraightEdges': 'true',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '120',
-      'elk.spacing.nodeNode': '80',
-      'elk.spacing.edgeEdge': '20',
-      'elk.layered.spacing.edgeEdgeBetweenLayers': '20',
-      'elk.spacing.edgeNode': '30',
-    },
-    children: nodes.map((node) => {
-      const isFolded = node.type === 'folded';
-      return {
-        id: node.id,
-        width: isFolded ? 128 : 256,
-        height: isFolded ? 40 : 80,
-        ports: [
-          {
-            id: `${node.id}-in`,
-            properties: {
-              'port.side': isHorizontal ? 'WEST' : 'NORTH',
-              'port.alignment': 'CENTER',
-            }
-          },
-          {
-            id: `${node.id}-out`,
-            properties: {
-              'port.side': isHorizontal ? 'EAST' : 'SOUTH',
-              'port.alignment': 'CENTER',
-            }
-          }
-        ]
-      };
-    }),
-    edges: edges.map((edge) => ({
-      id: edge.id,
-      sources: [`${edge.source}-out`],
-      targets: [`${edge.target}-in`],
-      layoutOptions: {
-        'elk.layered.priority.straightness': edge.data?.weight ? String(edge.data.weight) : '1',
-      }
-    })),
-  };
-
-  const layoutedGraph = await elk.layout(graph);
-
-  const layoutedNodes = nodes.map((node) => {
-    const layoutedNode = layoutedGraph.children?.find((n: any) => n.id === node.id);
-    return {
-      ...node,
-      position: {
-        x: layoutedNode?.x || 0,
-        y: layoutedNode?.y || 0,
-      },
-      targetPosition: isHorizontal ? Position.Left : Position.Top,
-      sourcePosition: isHorizontal ? Position.Right : Position.Bottom,
-      zIndex: 10,
-    };
   });
 
-  const layoutedEdges = edges.map((edge) => {
-    const layoutedEdge = layoutedGraph.edges?.find((e: any) => e.id === edge.id);
-    return {
-      ...edge,
-      type: 'elk', 
-      data: {
-        ...edge.data,
-        layoutedEdge,
+  return { nodes, nodeMap };
+}
+
+function addInternalEdges(
+  el: GraphElement & { type: 'folded' },
+  index: number,
+  edges: Edge[]
+): void {
+  el.commits.forEach((commit, idx) => {
+    if (idx === 0) return;
+    edges.push({
+      id: `edge-${el.id}-${idx}`,
+      source: `commit-${el.commits[idx - 1].sha}`,
+      target: `commit-${commit.sha}`,
+      type: 'elk',
+      style: {
+        stroke: getBranchColor(commit.branch || 'unknown', commit.sha),
+        strokeWidth: 2,
+        opacity: 0.7,
       },
-      zIndex: -1,
-    };
+      data: { sameBranch: true, weight: 100, elementIndex: index },
+    });
+  });
+}
+
+function addParentEdgesForCommit(
+  el: GraphElement & { type: 'commit' },
+  index: number,
+  nodeMap: Map<string, NodeMapValue>,
+  edges: Edge[]
+): void {
+  const branchName = el.data.branch || 'unknown';
+  const branchColor = getBranchColor(branchName, el.data.sha);
+  const isMain = branchName === 'main' || branchName === 'master';
+
+  el.data.parents.forEach((parentSha, parentIdx) => {
+    const sourceId = nodeMap.get(parentSha);
+    const targetId = nodeMap.get(el.data.sha);
+    if (!sourceId || !targetId) return;
+    const realSource = typeof sourceId === 'object' ? sourceId.last : sourceId;
+    const weight = parentIdx === 0 ? (isMain ? 1000 : 100) : 1;
+    edges.push({
+      id: `e-${realSource}-${targetId}-${parentIdx}`,
+      source: realSource,
+      target: typeof targetId === 'object' ? targetId.last : targetId,
+      type: 'elk',
+      style: { stroke: branchColor, strokeWidth: 2, opacity: 0.8 },
+      data: { sameBranch: parentIdx === 0, weight, elementIndex: index },
+    });
+  });
+}
+
+function addParentEdgesForFolded(
+  el: GraphElement & { type: 'folded' },
+  index: number,
+  unfurledIds: Set<string>,
+  nodeMap: Map<string, NodeMapValue>,
+  edges: Edge[]
+): void {
+  const sha = el.commits[0]?.sha;
+  const branchName = el.commits[0]?.branch || 'unknown';
+  const branchColor = getBranchColor(branchName, sha);
+  const isMain = branchName === 'main' || branchName === 'master';
+
+  let targetId = el.id;
+  if (unfurledIds.has(el.id)) {
+    const mapped = nodeMap.get(el.id);
+    if (mapped && typeof mapped === 'object') targetId = mapped.first;
+  }
+
+  el.parents.forEach((parentSha, parentIdx) => {
+    const sourceId = nodeMap.get(parentSha);
+    if (!sourceId) return;
+    const realSource = typeof sourceId === 'object' ? sourceId.last : sourceId;
+    const weight = parentIdx === 0 ? (isMain ? 1000 : 100) : 1;
+    edges.push({ id: `e-${realSource}-${targetId}-${parentIdx}`,
+      source: realSource, target: targetId, type: 'elk',
+      style: { stroke: branchColor, strokeWidth: 2, opacity: 0.8 },
+      data: { sameBranch: parentIdx === 0, weight, elementIndex: index } });
+  });
+}
+
+function buildEdges(
+  elements: GraphElement[],
+  unfurledIds: Set<string>,
+  nodeMap: Map<string, NodeMapValue>
+): Edge[] {
+  const edges: Edge[] = [];
+
+  elements.forEach((el, index) => {
+    if (el.type === 'folded' && unfurledIds.has(el.id)) {
+      addInternalEdges(el, index, edges);
+    }
   });
 
-  return { nodes: layoutedNodes, edges: layoutedEdges };
-};
+  elements.forEach((el, index) => {
+    if (el.type === 'commit') {
+      addParentEdgesForCommit(el, index, nodeMap, edges);
+    } else {
+      addParentEdgesForFolded(el, index, unfurledIds, nodeMap, edges);
+    }
+  });
 
-const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) => {
+  return edges;
+}
+
+function safeDate(dateStr: string | undefined, locale: 'en' | 'id'): string {
+  if (!dateStr) return 'N/A';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return 'N/A';
+    return d.toLocaleString(locale === 'id' ? 'id-ID' : 'en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  } catch {
+    return 'N/A';
+  }
+}
+
+const nodeTypes = { commit: CommitNode, folded: FoldedNode };
+const edgeTypes = { elk: ElkCustomEdge };
+
+function useTranslations(language: 'en' | 'id') {
+  return useMemo(() => ({
+    horizontal: language === 'en' ? 'Horizontal' : 'Mendatar',
+    vertical: language === 'en' ? 'Vertical' : 'Vertikal',
+    collapseAll: language === 'en' ? 'Collapse All Segments' : 'Tutup Semua Segmen',
+    clickHint: language === 'en'
+      ? 'Click capsule nodes to unfurl linear paths'
+      : 'Klik node kapsul untuk membuka jalur linier',
+    viewOnGithub: language === 'en' ? 'View on GitHub' : 'Lihat di GitHub',
+    viewSummary: language === 'en' ? 'View Commit Summary' : 'Lihat Ringkasan Komit',
+    optimizingLayout: language === 'en' ? 'Optimizing Layout...' : 'Mengoptimalkan Tata Letak...',
+    contributingNow: language === 'en' ? 'Contributing now' : 'Sedang berkontribusi',
+    segment: language === 'en' ? 'Segment:' : 'Segmen:',
+    linearCommits: language === 'en' ? 'Linear Commits' : 'Komit Linear',
+    foldedToSave: language === 'en' ? 'Folded to save space' : 'Dilipat untuk menghemat ruang',
+    step: language === 'en' ? 'Step' : 'Langkah',
+    of: language === 'en' ? 'of' : 'dari',
+    emptyGraph: language === 'en' ? 'No commits found in this repository.' : 'Tidak ada komit ditemukan.',
+  }), [language]);
+}
+
+const GraphInner = ({ elements, repoName, language = 'en', githubToken }: CommitGraphProps) => {
   const [layoutDirection, setLayoutDirection] = useState<'RIGHT' | 'DOWN'>('RIGHT');
   const [playbackIndex, setPlaybackIndex] = useState(1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [unfurledIds, setUnfurledIds] = useState<Set<string>>(new Set());
-  const [nodes, setNodes] = useState<Node[]>([]);
-  const [edges, setEdges] = useState<Edge[]>([]);
   const [fullLayoutedNodes, setFullLayoutedNodes] = useState<Node[]>([]);
   const [fullLayoutedEdges, setFullLayoutedEdges] = useState<Edge[]>([]);
-  const [isLayouting, setIsLayouting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  
-  const [activeNodeMenu, setActiveNodeMenu] = useState<{ commit: any, x: number, y: number } | null>(null);
+  const [activeNodeMenu, setActiveNodeMenu] = useState<{
+    commit: GitCommit; x: number; y: number;
+  } | null>(null);
   const [isSummarizing, setIsSummarizing] = useState(false);
-  const [summaryData, setSummaryData] = useState<{ repoName: string; commitSha: string; branch: string; githubUrl: string; message: string; parsedData: ParsedCommit; fileStats?: any[]; rawDiff: string } | null>(null);
-
-  const lastFoldedIdRef = useRef<string | null>(null);
-  const { setCenter, getViewport } = useReactFlow();
-  
-  const t = {
-    horizontal: language === 'en' ? 'Horizontal' : 'Horizontal',
-    vertical: language === 'en' ? 'Vertical' : 'Vertikal',
-    collapseAll: language === 'en' ? 'Collapse All Segments' : 'Tutup Semua Segmen',
-    clickHint: language === 'en' ? 'Click capsule nodes to unfurl linear paths' : 'Klik node kapsul untuk membuka jalur linier',
-    viewOnGithub: language === 'en' ? 'View on GitHub' : 'Lihat di GitHub',
-    viewSummary: language === 'en' ? 'View Commit Summary' : 'Lihat Ringkasan Komit',
-  };
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-
-  const [graphBounds, setGraphBounds] = useState({ minX: 0, maxX: 1000, minY: 0, maxY: 100 });
-  const [lockedZoom, setLockedZoom] = useState(1);
+  const [summaryData, setSummaryData] = useState<{
+    repoName: string; commitSha: string; branch: string; githubUrl: string;
+    message: string; parsedData: ParsedCommit; fileStats?: any[];
+    rawDiff: string; diffError?: string;
+  } | null>(null);
   const [sliderX, setSliderX] = useState(0);
   const [sliderY, setSliderY] = useState(0);
 
+  const lastFoldedIdRef = useRef<string | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastMoveRef = useRef(0);
+  const summaryAbortRef = useRef<AbortController | null>(null);
+  const { setCenter } = useReactFlow();
+
+  const t = useTranslations(language);
+  const { runLayout, isLayouting, layoutError } = useElkLayout();
+  const { bounds, lockedZoom, computeBounds } = useGraphBounds();
+  const { visibleNodes, visibleEdges, firstMatch } = useGraphFilter(
+    fullLayoutedNodes, fullLayoutedEdges, searchQuery, playbackIndex, elements.length, isPlaying
+  );
+
   const contributors = useMemo(() => {
     const map = new Map<string, { name: string; avatar?: string; url?: string }>();
-    elements.forEach(el => {
+    elements.forEach((el) => {
       if (el.type === 'commit') {
-        map.set(el.data.author, { 
-          name: el.data.author, 
-          avatar: el.data.author_avatar,
-          url: el.data.author_url
-        });
+        map.set(el.data.author, { name: el.data.author, avatar: el.data.author_avatar, url: el.data.author_url });
       } else {
-        el.commits.forEach(c => {
-          map.set(c.author, { 
-            name: c.author, 
-            avatar: c.author_avatar,
-            url: c.author_url
-          });
-        });
+        el.commits.forEach((c) => map.set(c.author, { name: c.author, avatar: c.author_avatar, url: c.author_url }));
       }
     });
     return Array.from(map.values());
   }, [elements]);
 
-  const currentElement = elements[playbackIndex - 1];
-  const activeContributorName = useMemo(() => {
-    if (!currentElement) return null;
-    return currentElement.type === 'commit' ? currentElement.data.author : currentElement.commits[0]?.author;
-  }, [currentElement]);
-
-  const activeAvatar = useMemo(() => {
-    if (!currentElement) return null;
-    return currentElement.type === 'commit' ? currentElement.data.author_avatar : currentElement.commits[0]?.author_avatar;
-  }, [currentElement]);
-
   const toggleUnfurl = (id: string) => {
-    setUnfurledIds(prev => {
+    setUnfurledIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
         next.delete(id);
         lastFoldedIdRef.current = id;
       } else {
         next.add(id);
-        const el = elements.find(e => (e.type === 'commit' ? e.data.sha : e.id) === id);
+        const el = elements.find((e) => (e.type === 'commit' ? e.data.sha : e.id) === id);
         if (el && el.type === 'folded' && el.commits.length > 0) {
-           lastFoldedIdRef.current = `commit-${el.commits[0].sha}`;
+          lastFoldedIdRef.current = `commit-${el.commits[0].sha}`;
         } else {
-           lastFoldedIdRef.current = id;
+          lastFoldedIdRef.current = id;
         }
       }
       return next;
     });
   };
 
-  useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
-    
-    if (isPlaying) {
-      interval = setInterval(() => {
-        setPlaybackIndex((prev) => {
-          if (prev >= elements.length) {
-            setIsPlaying(false);
-            return prev;
-          }
-          return prev + 1;
-        });
-      }, 600);
-      timerRef.current = interval;
-    }
+  const currentElement = elements[playbackIndex - 1];
+  const activeContributorName = useMemo(() => {
+    if (!currentElement) return null;
+    return currentElement.type === 'commit' ? currentElement.data.author : currentElement.commits[0]?.author;
+  }, [currentElement]);
+  const activeAvatar = useMemo(() => {
+    if (!currentElement) return null;
+    return currentElement.type === 'commit' ? currentElement.data.author_avatar : currentElement.commits[0]?.author_avatar;
+  }, [currentElement]);
 
-    return () => {
-      if (interval) clearInterval(interval);
-      if (timerRef.current === interval) timerRef.current = null;
-    };
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+    if (isPlaying) {
+      interval = setInterval(() => setPlaybackIndex((prev) => Math.min(prev + 1, elements.length)), 600);
+    }
+    return () => { if (interval) clearInterval(interval); };
   }, [isPlaying, elements.length]);
 
   useEffect(() => {
-    if (fullLayoutedNodes.length > 0 && !isLayouting) {
-      const isHorizontal = layoutDirection === 'RIGHT';
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      fullLayoutedNodes.forEach(node => {
-        const w = (node.width as number) || 256;
-        const h = (node.height as number) || 80;
-        minX = Math.min(minX, node.position.x);
-        maxX = Math.max(maxX, node.position.x + w);
-        minY = Math.min(minY, node.position.y);
-        maxY = Math.max(maxY, node.position.y + h);
-      });
-      setGraphBounds({ minX, maxX, minY, maxY });
+    if (playbackIndex > elements.length) setIsPlaying(false);
+  }, [playbackIndex, elements.length]);
 
-      let optimalZoom = 1;
-      if (isHorizontal) {
-        const totalHeight = Math.max(maxY - minY, 100);
-        const availableHeight = window.innerHeight - 250; 
-        optimalZoom = availableHeight / totalHeight;
-      } else {
-        const totalWidth = Math.max(maxX - minX, 100);
-        const availableWidth = window.innerWidth - 100;
-        optimalZoom = availableWidth / totalWidth;
+  useEffect(() => {
+    setPlaybackIndex(1);
+    setIsPlaying(false);
+    setUnfurledIds(new Set());
+  }, [elements]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const performLayout = async () => {
+      const { nodes: initialNodes, nodeMap } = buildNodes(elements, unfurledIds, toggleUnfurl, language);
+      const allEdges = buildEdges(elements, unfurledIds, nodeMap);
+      try {
+        const result = await runLayout(initialNodes, allEdges, layoutDirection);
+        if (cancelled) return;
+        setFullLayoutedNodes(result.nodes);
+        setFullLayoutedEdges(result.edges);
+        const resultBounds = computeBounds(result.nodes, layoutDirection);
+        if (resultBounds && lastFoldedIdRef.current) {
+          const target = result.nodes.find((n) => n.id === lastFoldedIdRef.current);
+          if (target) {
+            const isHorizontal = layoutDirection === 'RIGHT';
+            const xs = result.nodes.map((n) => n.position.x);
+            const ys = result.nodes.map((n) => n.position.y);
+            const cX = isHorizontal
+              ? target.position.x + (target.width || 256) / 2
+              : (Math.min(...xs) + Math.max(...xs)) / 2;
+            const cY = isHorizontal
+              ? (Math.min(...ys) + Math.max(...ys)) / 2
+              : target.position.y + (target.height || 80) / 2;
+            const span = isHorizontal
+              ? Math.max(...xs) - Math.min(...xs)
+              : Math.max(...ys) - Math.min(...ys);
+            const zoom = Math.min(1.5, span / (isHorizontal ? window.innerWidth : window.innerHeight));
+            setCenter(cX, cY, { zoom: Math.min(zoom, resultBounds.optimalZoom), duration: 800 });
+          }
+          lastFoldedIdRef.current = null;
+        }
+        if (resultBounds && !lastFoldedIdRef.current && initialNodes.length <= 1) {
+          setCenter(
+            (resultBounds.bounds.minX + resultBounds.bounds.maxX) / 2,
+            (resultBounds.bounds.minY + resultBounds.bounds.maxY) / 2,
+            { zoom: resultBounds.optimalZoom, duration: 800 }
+          );
+        }
+      } catch {
+        if (!cancelled) console.error('Layout failed:', layoutError);
       }
-
-      optimalZoom = Math.min(Math.max(optimalZoom, 0.1), 1.5);
-      setLockedZoom(optimalZoom);
-
-      if (!lastFoldedIdRef.current && nodes.length <= 1) {
-         setCenter(
-           (minX + maxX) / 2,
-           (minY + maxY) / 2,
-           { zoom: optimalZoom, duration: 800 }
-         );
-      }
-    }
-  }, [fullLayoutedNodes, isLayouting, layoutDirection, setCenter]);
+    };
+    performLayout();
+    return () => { cancelled = true; };
+  }, [elements, unfurledIds, layoutDirection, runLayout, computeBounds, setCenter, language, layoutError]);
 
   useEffect(() => {
     const isHorizontal = layoutDirection === 'RIGHT';
-
-    if (lastFoldedIdRef.current) {
-      const id = lastFoldedIdRef.current;
-      const targetNode = nodes.find(n => n.id === id);
-      if (targetNode) {
-        const timeout = setTimeout(() => {
-          const w = (targetNode.width as number) || 256;
-          const h = (targetNode.height as number) || 80;
-          setCenter(
-            isHorizontal ? targetNode.position.x + w / 2 : (graphBounds.minX + graphBounds.maxX) / 2,
-            isHorizontal ? (graphBounds.minY + graphBounds.maxY) / 2 : targetNode.position.y + h / 2,
-            { zoom: lockedZoom, duration: 800 }
-          );
-          lastFoldedIdRef.current = null;
-        }, 150);
-        return () => clearTimeout(timeout);
-      }
-    }
-
-    if (currentElement) {
-      const targetNodeId = currentElement.type === 'commit' ? currentElement.data.sha : currentElement.id;
-      const targetNode = nodes.find((n) => n.id === targetNodeId);
-      if (targetNode) {
-        const timeout = setTimeout(() => {
-          const w = (targetNode.width as number) || 256;
-          const h = (targetNode.height as number) || 80;
-          setCenter(
-             isHorizontal ? targetNode.position.x + w / 2 : (graphBounds.minX + graphBounds.maxX) / 2,
-             isHorizontal ? (graphBounds.minY + graphBounds.maxY) / 2 : targetNode.position.y + h / 2,
-            { zoom: lockedZoom, duration: 800 }
-          );
-        }, 100);
-        return () => clearTimeout(timeout);
-      }
-    }
-  }, [playbackIndex, isPlaying, unfurledIds, currentElement, nodes, lockedZoom, graphBounds, setCenter, layoutDirection]);
+    if (!currentElement) return;
+    const targetNodeId = currentElement.type === 'commit' ? currentElement.data.sha : currentElement.id;
+    const targetNode = visibleNodes.find((n) => n.id === targetNodeId);
+    if (!targetNode) return;
+    const timeout = setTimeout(() => {
+      const w = targetNode.width || 256;
+      const h = targetNode.height || 80;
+      setCenter(
+        isHorizontal ? targetNode.position.x + w / 2 : (bounds.minX + bounds.maxX) / 2,
+        isHorizontal ? (bounds.minY + bounds.maxY) / 2 : targetNode.position.y + h / 2,
+        { zoom: lockedZoom, duration: 800 }
+      );
+    }, 100);
+    return () => clearTimeout(timeout);
+  }, [playbackIndex, isPlaying, unfurledIds, currentElement, visibleNodes, lockedZoom, bounds, setCenter, layoutDirection]);
 
   useEffect(() => {
-    const calcFullLayout = async () => {
-      const initialNodes: Node[] = [];
-      const initialEdges: Edge[] = [];
-      const nodeMap = new Map<string, any>();
+    if (!firstMatch || searchQuery.trim().length === 0) return;
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    searchTimeoutRef.current = setTimeout(() => {
+      setCenter(
+        firstMatch.position.x + (firstMatch.width || 100) / 2,
+        firstMatch.position.y + (firstMatch.height || 50) / 2,
+        { zoom: 1.5, duration: 500 }
+      );
+    }, 100);
+    return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
+  }, [firstMatch, searchQuery, setCenter]);
 
-      elements.forEach((el, index) => {
-        if (el.type === 'folded' && unfurledIds.has(el.id)) {
-          el.commits.forEach((commit, idx) => {
-            const nodeId = `commit-${commit.sha}`;
-            initialNodes.push({
-              id: nodeId,
-              type: 'commit',
-              position: { x: 0, y: 0 },
-              sourcePosition: 'right' as any,
-              targetPosition: 'left' as any,
-              data: { 
-                commit,
-                onFold: () => toggleUnfurl(el.id),
-                elementIndex: index 
-              },
-            });
-            nodeMap.set(commit.sha, nodeId);
+  const handleNodeClick = useCallback((_e: React.MouseEvent, node: Node) => {
+    if (node.type !== 'commit') return;
+    const data = node.data as Record<string, unknown>;
+    _e.stopPropagation();
+    setActiveNodeMenu({ commit: data.commit as GitCommit, x: _e.clientX, y: _e.clientY });
+  }, []);
 
-            if (idx > 0) {
-              initialEdges.push({
-                id: `edge-${el.id}-${idx}`,
-                source: `commit-${el.commits[idx-1].sha}`,
-                target: nodeId,
-                type: 'elk',
-                style: { stroke: getBranchColor(commit.branch || 'unknown', commit.sha), strokeWidth: 2, opacity: 0.7 },
-                data: { sameBranch: true, weight: 100, elementIndex: index },
-              });
-            }
-          });
-          
-          nodeMap.set(el.id, { 
-            first: `commit-${el.commits[0].sha}`, 
-            last: `commit-${el.commits[el.commits.length - 1].sha}` 
-          });
-        } else {
-          const id = el.type === 'commit' ? el.data.sha : el.id;
-          initialNodes.push({
-            id,
-            type: el.type,
-            position: { x: 0, y: 0 },
-            sourcePosition: 'right' as any,
-            targetPosition: 'left' as any,
-            data: el.type === 'commit' 
-              ? { commit: el.data, elementIndex: index } 
-              : { folded: el, onUnfold: () => toggleUnfurl(el.id), elementIndex: index },
-          });
-          nodeMap.set(id, id);
-          
-          if (el.type === 'folded') {
-            el.commits.forEach(c => nodeMap.set(c.sha, id));
-          }
-        }
-      });
+  const handlePaneClick = useCallback(() => setActiveNodeMenu(null), []);
 
-      elements.forEach((el, index) => {
-        if (el.type === 'commit') {
-          const branchName = el.data.branch || 'unknown';
-          const branchColor = getBranchColor(branchName, el.data.sha);
-          const isMain = branchName === 'main' || branchName === 'master';
-          
-          el.data.parents.forEach((parentSha, parentIdx) => {
-            const sourceId = nodeMap.get(parentSha);
-            const targetId = nodeMap.get(el.data.sha);
-            
-            if (sourceId && targetId) {
-              const realSource = typeof sourceId === 'object' ? sourceId.last : sourceId;
-              const weight = parentIdx === 0 ? (isMain ? 1000 : 100) : 1;
-              initialEdges.push({
-                id: `e-${realSource}-${targetId}`,
-                source: realSource,
-                target: targetId,
-                type: 'elk',
-                style: { stroke: branchColor, strokeWidth: 2, opacity: 0.8 },
-                data: { sameBranch: parentIdx === 0, weight, elementIndex: index },
-              });
-            }
-          });
-        } else if (el.type === 'folded') {
-          const branchName = el.commits[0]?.branch || 'unknown';
-          const branchColor = getBranchColor(branchName, el.commits[0]?.sha);
-          const isMain = branchName === 'main' || branchName === 'master';
-          const isUnfurled = unfurledIds.has(el.id);
-          const targetId = isUnfurled ? nodeMap.get(el.id).first : el.id;
+  const handleMove = useCallback((_e: unknown, viewport: { x: number; y: number; zoom: number }) => {
+    const now = Date.now();
+    if (now - lastMoveRef.current < 50) return;
+    lastMoveRef.current = now;
+    setSliderX((window.innerWidth / 2 - viewport.x) / viewport.zoom);
+    setSliderY((window.innerHeight / 2 - viewport.y) / viewport.zoom);
+  }, []);
 
-          el.parents.forEach((parentSha, parentIdx) => {
-            const sourceId = nodeMap.get(parentSha);
-            if (sourceId && targetId) {
-              const realSource = typeof sourceId === 'object' ? sourceId.last : sourceId;
-              const weight = parentIdx === 0 ? (isMain ? 1000 : 100) : 1;
-              initialEdges.push({
-                id: `e-${realSource}-${targetId}`,
-                source: realSource,
-                target: targetId,
-                type: 'elk',
-                style: { stroke: branchColor, strokeWidth: 2, opacity: 0.8 },
-                data: { sameBranch: parentIdx === 0, weight, elementIndex: index },
-              });
-            }
-          });
-        }
-      });
-
-      setIsLayouting(true);
-      const layouted = await getLayoutedElements(initialNodes, initialEdges, layoutDirection);
-      setFullLayoutedNodes(layouted.nodes);
-      setFullLayoutedEdges(layouted.edges);
-      setIsLayouting(false);
-    };
-
-    calcFullLayout();
-  }, [elements, unfurledIds, layoutDirection]);
-
-  useEffect(() => {
-    const isSearching = searchQuery.trim().length > 0;
-    const lowerQuery = searchQuery.toLowerCase();
-
-    const visibleNodes = fullLayoutedNodes
-      .filter(n => typeof n.data?.elementIndex === 'number' && n.data.elementIndex < Math.min(playbackIndex, elements.length + 1))
-      .map(n => {
-        let isMatched = false;
-        
-        if (isSearching) {
-          if (n.type === 'commit') {
-            const c = n.data.commit as GitCommit;
-            isMatched = !!(c.message?.toLowerCase().includes(lowerQuery) || 
-                          c.author?.toLowerCase().includes(lowerQuery) ||
-                          c.sha?.toLowerCase().includes(lowerQuery));
-          } else if (n.type === 'folded') {
-            const folded = n.data.folded as IFoldedNode;
-            isMatched = folded.commits.some(c => 
-              c.message?.toLowerCase().includes(lowerQuery) || 
-              c.author?.toLowerCase().includes(lowerQuery) ||
-              c.sha?.toLowerCase().includes(lowerQuery)
-            );
-          }
-        }
-
-        return {
-          ...n,
-          style: {
-            ...n.style,
-            opacity: isSearching ? (isMatched ? 1 : 0.2) : 1,
-            zIndex: isSearching && isMatched ? 100 : n.style?.zIndex || 0,
-            filter: isSearching && !isMatched ? 'grayscale(80%)' : 'none',
-            transition: 'opacity 0.3s ease, filter 0.3s ease'
-          },
-          className: isSearching && isMatched ? (n.className + ' ring-4 ring-accent-blue/50 rounded-2xl shadow-[0_0_20px_rgba(59,130,246,0.5)]') : n.className
-        };
-      });
-
-    const visibleEdges = fullLayoutedEdges
-      .filter(e => typeof e.data?.elementIndex === 'number' && e.data.elementIndex < Math.min(playbackIndex, elements.length + 1))
-      .map(e => {
-        const isLastCommit = e.data?.elementIndex === playbackIndex - 1;
-        return { 
-          ...e, 
-          animated: isPlaying && isLastCommit,
-          style: {
-            ...e.style,
-            opacity: isSearching ? 0.2 : (e.style?.opacity ?? 0.8),
-            transition: 'opacity 0.3s ease'
-          }
-        };
+  const handleViewSummary = useCallback(async (commit: GitCommit) => {
+    const { sha, branch, message, github_url } = commit;
+    const commitId = sha;
+    setActiveNodeMenu(null);
+    const parsedData = parseCommitData(message || '');
+    setSummaryData({
+      repoName, commitSha: commitId, branch: branch || 'unknown', githubUrl: github_url || '',
+      message: message || '', parsedData, fileStats: [], rawDiff: '',
     });
-
-    setNodes(visibleNodes);
-    setEdges(visibleEdges);
-
-    if (isSearching) {
-      const firstMatch = visibleNodes.find(n => n.style?.opacity === 1);
-      if (firstMatch) {
-         const isHorizontal = layoutDirection === 'RIGHT';
-         const w = (firstMatch.width as number) || 256;
-         const h = (firstMatch.height as number) || 80;
-         setTimeout(() => {
-           setCenter(
-             firstMatch.position.x + w / 2,
-             firstMatch.position.y + h / 2,
-             { zoom: 1.2, duration: 800 }
-           );
-         }, 100);
+    setIsSummarizing(true);
+    try {
+      if (summaryAbortRef.current) summaryAbortRef.current.abort();
+      const controller = new AbortController();
+      summaryAbortRef.current = controller;
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const headers: Record<string, string> = {};
+      if (githubToken) headers['x-github-token'] = githubToken;
+      const res = await fetch(
+        `/api/commit-diff?repo=${encodeURIComponent(repoName)}&commitId=${encodeURIComponent(commitId)}`,
+        { headers, signal: controller.signal }
+      );
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        const validFiles = (data.files as any[])?.filter((f: any) => f.patch) || [];
+        const rawDiff = validFiles
+          .map((f: any) => `diff --git a/${f.filename} b/${f.filename}\n--- a/${f.filename}\n+++ b/${f.filename}\n${f.patch}`)
+          .join('\n');
+        const fileStats = (data.files as any[])?.map((f: any) => ({ name: f.filename, status: f.status, add: f.additions, del: f.deletions })) || [];
+        const fileNames = (data.files as any[])?.map((f: any) => f.filename) || [];
+        const stats = { additions: data.stats?.additions || 0, deletions: data.stats?.deletions || 0 };
+        const updatedParsedData = parseCommitData(message || '', fileNames, stats);
+        setSummaryData((prev) => prev ? { ...prev, parsedData: updatedParsedData, fileStats, rawDiff } : null);
+      } else {
+        clearTimeout(timeoutId);
+        const errData = await res.json().catch(() => ({ error: 'Failed to fetch commit diff' }));
+        throw new Error(errData.error || `HTTP ${res.status}`);
       }
+    } catch (e) {
+      const isAbort = (e as Error).name === 'AbortError';
+      console.error(isAbort ? 'Request timed out' : 'Failed to fetch commit diff:', e);
+      setSummaryData((prev) => prev ? {
+        ...prev, rawDiff: '', fileStats: [],
+        diffError: isAbort ? 'Request timed out after 15s' : (e as Error).message || 'Failed to load data',
+      } : null);
+    } finally {
+      setIsSummarizing(false);
     }
-  }, [fullLayoutedNodes, fullLayoutedEdges, playbackIndex, isPlaying, searchQuery, layoutDirection, setCenter, elements.length]);
+  }, [repoName, githubToken]);
+
+  const handleCollapseAll = useCallback(() => {
+    setUnfurledIds(new Set());
+    const firstEl = elements[0];
+    lastFoldedIdRef.current = firstEl.type === 'commit' ? firstEl.data.sha : firstEl.id;
+  }, [elements]);
+
+  if (elements.length === 0) {
+    return (
+      <div className="w-full h-full border border-hairline rounded-2xl overflow-hidden bg-surface relative flex items-center justify-center text-body text-lg">
+        {t.emptyGraph}
+      </div>
+    );
+  }
 
   return (
     <div className="w-full h-full border border-hairline rounded-2xl overflow-hidden bg-surface relative">
       <ReactFlow
-        nodes={nodes}
-        edges={edges}
+        nodes={visibleNodes}
+        edges={visibleEdges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        onNodeClick={(e, node) => {
-          if (node.type === 'commit') {
-            e.stopPropagation();
-            setActiveNodeMenu({
-              commit: node.data.commit,
-              x: e.clientX,
-              y: e.clientY
-            });
-          }
-        }}
-        onPaneClick={() => setActiveNodeMenu(null)}
-        onMove={(e, viewport) => {
-          if (typeof window !== 'undefined') {
-             const centerX = (window.innerWidth / 2 - viewport.x) / viewport.zoom;
-             const centerY = (window.innerHeight / 2 - viewport.y) / viewport.zoom;
-             setSliderX(centerX);
-             setSliderY(centerY);
-          }
-        }}
+        onNodeClick={handleNodeClick}
+        onPaneClick={handlePaneClick}
+        onMove={handleMove}
         colorMode="dark"
         minZoom={0.05}
         maxZoom={2}
         defaultEdgeOptions={{ type: 'elk', style: { strokeWidth: 2, stroke: '#505051' }, zIndex: -1 }}
       >
-        <AnimatePresence>
-          {isLayouting && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 z-50 bg-surface/50 backdrop-blur-[2px] flex items-center justify-center"
-            >
-              <div className="flex flex-col items-center gap-3">
-                <div className="w-8 h-8 border-2 border-accent-blue border-t-transparent rounded-full animate-spin" />
-                <span className="text-[10px] text-ash uppercase tracking-widest font-bold">Optimizing Layout...</span>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-        <Background gap={20} color="#161718" />
-        <Controls position="bottom-left" className="!bg-surface-elevated !border-hairline !rounded-lg !fill-white hidden sm:flex" />
-        
-        <Panel position="top-left" className="m-2 sm:m-4 flex flex-col gap-2 sm:gap-4 items-start">
-          <motion.div 
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="px-4 py-3 bg-surface-card border border-hairline rounded-xl hidden sm:flex items-center gap-3 shadow-xl"
-          >
-            <div className="w-8 h-8 bg-accent-blue/10 rounded-lg flex items-center justify-center text-accent-blue font-bold">
-              {elements.length}
-            </div>
-            <div>
-              <h3 className="text-sm font-medium text-ink leading-tight">{repoName}</h3>
-              <p className="text-[10px] text-ash uppercase tracking-widest">
-                Topological View • Step {playbackIndex}/{elements.length}
-              </p>
-            </div>
-          </motion.div>
-          
-          <ContributorLeaderboard nodes={elements} />
-        </Panel>
-
-        <Panel position="top-center" className="mt-3 sm:mt-6 z-50 hidden md:block">
-          <SearchBar value={searchQuery} onChange={setSearchQuery} />
-        </Panel>
-
-        <Panel position="top-right" className="m-2 sm:m-4 flex flex-col gap-2 sm:gap-4 items-end z-55">
-          <div className="block md:hidden">
-            <SearchBar value={searchQuery} onChange={setSearchQuery} />
-          </div>
-          <div className="hidden md:flex flex-col gap-4 items-end">
-            <ContributorPanel 
-              contributors={contributors} 
-              activeContributorName={activeContributorName} 
-            />
-          </div>
-        </Panel>
-
-        <Panel position="bottom-center" className="w-full max-w-md px-3 sm:px-6 mb-3 sm:mb-8 z-40 pointer-events-none">
-          <div className="relative pointer-events-auto">
-            <AnimatePresence>
-              {isPlaying && activeContributorName && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20, scale: 0.9 }}
-                  animate={{ opacity: 1, y: -20, scale: 1 }}
-                  exit={{ opacity: 0, y: 20, scale: 0.9 }}
-                  className="absolute -top-16 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-2 bg-accent-blue/90 text-white rounded-full shadow-2xl backdrop-blur-md border border-white/20 whitespace-nowrap z-50"
-                >
-                  <div className="w-8 h-8 rounded-full border border-white/30 overflow-hidden shadow-inner">
-                    {activeAvatar ? (
-                      <img src={activeAvatar} alt={activeContributorName} className="w-full h-full object-cover" />
-                    ) : (
-                      <User size={16} className="m-auto mt-2" />
-                    )}
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-[10px] opacity-70 font-bold uppercase tracking-wider">Contributing now</span>
-                    <span className="text-xs font-bold leading-none">{activeContributorName}</span>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>            <motion.div 
-              initial={{ opacity: 0, y: 50 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-surface/90 backdrop-blur-2xl border border-hairline/60 rounded-2xl sm:rounded-3xl p-3 sm:p-5 shadow-[0_20px_50px_rgba(0,0,0,0.5)] space-y-3 sm:space-y-4 pointer-events-auto"
-            >
-              <div className="flex items-center gap-3 sm:gap-5">
-                <button
-                  onClick={() => setIsPlaying(prev => !prev)}
-                  className="w-11 h-11 sm:w-16 sm:h-16 flex items-center justify-center bg-white text-black rounded-full hover:scale-105 active:scale-95 transition-all outline-none focus:ring-4 focus:ring-white/20 shrink-0 shadow-[0_0_20px_rgba(255,255,255,0.15)] hover:shadow-[0_0_30px_rgba(255,255,255,0.3)] cursor-pointer"
-                >
-                  {isPlaying ? <Pause className="w-4 h-4 sm:w-6 sm:h-6" fill="currentColor" /> : <Play className="w-4 h-4 sm:w-6 sm:h-6 ml-0.5 sm:ml-1" fill="currentColor" />}
-                </button>
-                
-                <button
-                  onClick={() => { setPlaybackIndex(1); setIsPlaying(false); }}
-                  className="w-8 h-8 sm:w-12 sm:h-12 flex items-center justify-center text-white/50 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-all active:scale-95 cursor-pointer shrink-0"
-                  title="Reset"
-                >
-                  <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />
-                </button>
-
-                <div className="flex-1 px-1 sm:px-2">
-                  <input
-                    type="range"
-                    min="1"
-                    max={elements.length}
-                    value={playbackIndex}
-                    onChange={(e) => setPlaybackIndex(parseInt(e.target.value))}
-                    className="w-full accent-white h-1.5 sm:h-2 bg-white/10 rounded-lg appearance-none cursor-pointer hover:bg-white/20 transition-colors"
-                  />
-                </div>
-
-                {/* Mobile direct toggle for layout direction */}
-                <button
-                  onClick={() => setLayoutDirection(prev => prev === 'RIGHT' ? 'DOWN' : 'RIGHT')}
-                  className="flex sm:hidden w-8 h-8 items-center justify-center text-accent-blue hover:text-white bg-accent-blue/10 hover:bg-accent-blue/20 border border-accent-blue/25 rounded-full transition-all active:scale-95 cursor-pointer shrink-0"
-                  title={layoutDirection === 'RIGHT' ? t.vertical : t.horizontal}
-                >
-                  <span className="text-[10px] font-extrabold uppercase px-1">
-                    {layoutDirection === 'RIGHT' ? 'H' : 'V'}
-                  </span>
-                </button>
-              </div>
- 
-              <AnimatePresence mode="wait">
-                <motion.div 
-                  key={playbackIndex}
-                  initial={{ opacity: 0, y: 5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -5 }}
-                  className="flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-2 bg-surface-card/50 rounded-lg border border-hairline/30"
-                >
-                  <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-accent-blue shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    {currentElement?.type === 'commit' ? (
-                       <>
-                        <div className="flex items-center gap-1.5 sm:gap-2">
-                          <span className="text-[9px] sm:text-[10px] font-mono text-ash shrink-0">{currentElement.data.sha.substring(0, 7)}</span>
-                          <span className="text-xs text-ink font-medium truncate">{currentElement.data.message}</span>
-                        </div>
-                        <div className="text-[9px] sm:text-[10px] text-ash truncate">
-                          {currentElement.data.author} • {new Date(currentElement.data.date).toLocaleString()}
-                        </div>
-                       </>
-                    ) : (
-                      <div className="flex items-center justify-between w-full">
-                         <span className="text-xs font-bold text-ink">Segment: {currentElement?.commits.length} Linear Commits</span>
-                         <span className="text-[10px] text-ash italic">Folded to save space</span>
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              </AnimatePresence>
- 
-              {/* Slider for Panning (hidden on mobile, direct touch is preferred) */}
-              <div className="pt-3 border-t border-hairline/30 hidden sm:flex items-center gap-3">
-                <span className="text-[10px] uppercase font-bold text-ash tracking-widest min-w-[50px]">
-                  {layoutDirection === 'RIGHT' ? 'Pan X' : 'Pan Y'}
-                </span>
-                <input
-                  type="range"
-                  min={layoutDirection === 'RIGHT' ? graphBounds.minX : graphBounds.minY}
-                  max={layoutDirection === 'RIGHT' ? graphBounds.maxX : graphBounds.maxY}
-                  value={layoutDirection === 'RIGHT' ? sliderX : sliderY}
-                  onChange={(e) => {
-                    const val = parseFloat(e.target.value);
-                    if (layoutDirection === 'RIGHT') {
-                      setSliderX(val);
-                      setCenter(val, (graphBounds.minY + graphBounds.maxY) / 2, { zoom: lockedZoom, duration: 0 });
-                    } else {
-                      setSliderY(val);
-                      setCenter((graphBounds.minX + graphBounds.maxX) / 2, val, { zoom: lockedZoom, duration: 0 });
-                    }
-                  }}
-                  className="w-full h-1 bg-surface-card rounded-lg appearance-none cursor-pointer accent-accent-blue"
-                />
-              </div>
-            </motion.div>
-          </div>
-        </Panel>
-        
-        <Panel position="bottom-right" className="m-4 flex flex-col gap-2.5 items-end">
-          {/* Desktop/Tablet Orientation Toggle */}
-          <div className="hidden sm:flex items-center p-1 bg-surface-card border border-hairline rounded-xl shadow-lg backdrop-blur-md">
-            <button 
-              onClick={() => setLayoutDirection('RIGHT')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${layoutDirection === 'RIGHT' ? 'bg-accent-blue text-white shadow-sm' : 'text-ash hover:text-white'}`}
-            >
-              {t.horizontal}
-            </button>
-            <button 
-              onClick={() => setLayoutDirection('DOWN')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${layoutDirection === 'DOWN' ? 'bg-accent-blue text-white shadow-sm' : 'text-ash hover:text-white'}`}
-            >
-              {t.vertical}
-            </button>
-          </div>
-
-          <div className="flex flex-col gap-2 items-end">
-            {unfurledIds.size > 0 && (
-              <button 
-                onClick={() => {
-                  setUnfurledIds(new Set());
-                  const firstEl = elements[0];
-                  const firstId = firstEl.type === 'commit' ? firstEl.data.sha : firstEl.id;
-                  lastFoldedIdRef.current = firstId;
-                }}
-                className="flex items-center gap-2 p-2 bg-accent-blue/10 border border-accent-blue/20 rounded-lg text-accent-blue text-[10px] hover:bg-accent-blue/20 transition-colors"
-              >
-                <Minimize2 size={12} />
-                <span>{t.collapseAll}</span>
-              </button>
-            )}
-            <div className="hidden md:flex items-center gap-2 p-2 bg-surface-elevated border border-hairline rounded-lg text-ash text-[10px]">
-              <Info size={12} className="shrink-0" />
-              <span>{t.clickHint}</span>
-            </div>
-          </div>
-        </Panel>
+        <GraphPanels
+          elements={elements}
+          repoName={repoName}
+          language={language}
+          t={t}
+          isLayouting={isLayouting}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          layoutDirection={layoutDirection}
+          onLayoutDirectionChange={setLayoutDirection}
+          isPlaying={isPlaying}
+          onPlayToggle={() => setIsPlaying((p) => !p)}
+          playbackIndex={playbackIndex}
+          onPlaybackIndexChange={setPlaybackIndex}
+          onReset={() => { setPlaybackIndex(1); setIsPlaying(false); }}
+          currentElement={currentElement}
+          safeDate={safeDate}
+          activeContributorName={activeContributorName}
+          activeAvatar={activeAvatar}
+          contributors={contributors}
+          bounds={bounds}
+          lockedZoom={lockedZoom}
+          sliderX={sliderX}
+          sliderY={sliderY}
+          onSliderXChange={setSliderX}
+          onSliderYChange={setSliderY}
+          unfurledIdsCount={unfurledIds.size}
+          onCollapseAll={handleCollapseAll}
+        />
       </ReactFlow>
 
-      {/* Node Action Menu */}
       <AnimatePresence>
         {activeNodeMenu && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: -10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: -10 }}
-            className="fixed z-50 bg-surface-elevated/90 backdrop-blur-md border border-hairline rounded-lg shadow-xl overflow-hidden flex flex-col min-w-[160px]"
-            style={{ 
-              left: Math.min(activeNodeMenu.x, window.innerWidth - 200),
-              top: Math.min(activeNodeMenu.y + 10, window.innerHeight - 150)
-            }}
-          >
-            <button
-              onClick={() => {
-                window.open(activeNodeMenu.commit.github_url, '_blank');
-                setActiveNodeMenu(null);
-              }}
-              className="flex items-center gap-2 px-4 py-3 text-xs font-medium text-ash hover:text-white hover:bg-white/5 transition-colors text-left"
-            >
-              <ExternalLink size={14} /> {t.viewOnGithub}
-            </button>
-            <div className="h-px w-full bg-hairline" />
-            <button
-              onClick={async () => {
-                const commitId = activeNodeMenu.commit.sha;
-                const branchName = activeNodeMenu.commit.branch || 'unknown';
-                const message = activeNodeMenu.commit.message || '';
-                const githubUrl = activeNodeMenu.commit.github_url || '';
-                setActiveNodeMenu(null);
-                
-                const parsedData = parseCommitData(message);
-                setSummaryData({ repoName, commitSha: commitId, branch: branchName, githubUrl, message, parsedData, fileStats: [], rawDiff: '' });
-                setIsSummarizing(true);
-                
-                try {
-                  const res = await fetch(`https://api.github.com/repos/${repoName}/commits/${commitId}`);
-                  if (res.ok) {
-                     const data = await res.json();
-                     
-                     const validFiles = data.files?.filter((f: any) => f.patch) || [];
-                     const rawDiff = validFiles.map((f: any) => {
-                       return `diff --git a/${f.filename} b/${f.filename}\n--- a/${f.filename}\n+++ b/${f.filename}\n${f.patch}`;
-                     }).join('\n');
-                     
-                     const fileStats = data.files?.map((f: any) => ({
-                       name: f.filename,
-                       status: f.status,
-                       add: f.additions,
-                       del: f.deletions
-                     })) || [];
-
-                     const fileNames = data.files?.map((f: any) => f.filename) || [];
-                     const stats = { additions: data.stats?.additions || 0, deletions: data.stats?.deletions || 0 };
-                     const updatedParsedData = parseCommitData(message, fileNames, stats);
-                     
-                     setSummaryData(prev => prev ? { ...prev, parsedData: updatedParsedData, fileStats, rawDiff } : null);
-                  }
-                } catch (e) {
-                  console.error("Failed to fetch commit diff:", e);
-                } finally {
-                  setIsSummarizing(false);
-                }
-              }}
-              className="flex items-center gap-2 px-4 py-3 text-xs font-medium text-accent-blue hover:text-white hover:bg-accent-blue/20 transition-colors text-left"
-            >
-              <FileText size={14} /> {t.viewSummary}
-            </button>
-          </motion.div>
+          <NodeContextMenu
+            commit={activeNodeMenu.commit}
+            x={activeNodeMenu.x}
+            y={activeNodeMenu.y}
+            t={t}
+            onClose={() => setActiveNodeMenu(null)}
+            onViewSummary={handleViewSummary}
+          />
         )}
       </AnimatePresence>
 
-      {/* Commit Summary Panel */}
       <AnimatePresence>
         {summaryData && (
           <AiSummaryPanel
@@ -937,6 +565,7 @@ const GraphInner = ({ elements, repoName, language = 'en' }: CommitGraphProps) =
             parsedData={summaryData.parsedData}
             rawDiff={summaryData.rawDiff}
             fileStats={summaryData.fileStats}
+            diffError={summaryData.diffError || null}
             isSummarizing={isSummarizing}
             language={language}
             onClose={() => setSummaryData(null)}

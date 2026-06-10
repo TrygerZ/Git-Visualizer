@@ -2,7 +2,7 @@ import React from 'react';
 import { Handle, Position, NodeProps, type Node } from '@xyflow/react';
 import { FoldedNode as IFoldedNode } from '../types';
 import { Layers } from 'lucide-react';
-import { getBranchColor } from './CommitGraph';
+import { getBranchColor } from '../lib/getBranchColor';
 
 export const FoldedNode = ({ data }: NodeProps<Node<{ folded: IFoldedNode, onUnfold: () => void }>>) => {
   const { folded, onUnfold } = data;

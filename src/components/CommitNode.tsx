@@ -3,7 +3,7 @@ import { Handle, Position, NodeProps, type Node } from '@xyflow/react';
 import { GitCommit } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { Calendar, User, ExternalLink, GitBranch, ChevronLeft, Minimize2 } from 'lucide-react';
-import { getBranchColor } from './CommitGraph';
+import { getBranchColor } from '../lib/getBranchColor';
 
 export const CommitNode = ({ data }: NodeProps<Node<{ commit: GitCommit, onFold?: () => void }>>) => {
   const { commit, onFold } = data;

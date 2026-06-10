@@ -1,6 +1,6 @@
-import React from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { X, GitCommit, FileText, ArrowUpRight, Plus, Minus, Layers, Sparkles } from 'lucide-react';
+import { X, FileText, ArrowUpRight, Plus, Minus, Layers, Sparkles } from 'lucide-react';
 import { ParsedCommit } from '../lib/commitParser';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -20,40 +20,32 @@ interface AiSummaryPanelProps {
   parsedData: ParsedCommit;
   rawDiff?: string | null;
   fileStats?: FileStat[];
+  diffError?: string | null;
   isSummarizing?: boolean;
   language?: 'en' | 'id';
   onClose: () => void;
 }
 
-export const AiSummaryPanel: React.FC<AiSummaryPanelProps> = ({
-  commitSha,
-  branch,
-  githubUrl,
-  message,
-  parsedData,
-  rawDiff,
-  fileStats,
-  isSummarizing: isFetchingDiff,
-  language = 'en',
-  onClose,
-}) => {
-  const [aiSummary, setAiSummary] = React.useState<string | null>(null);
-  const [isGeneratingAi, setIsGeneratingAi] = React.useState(false);
-  const [aiError, setAiError] = React.useState<string | null>(null);
+const summaryCache = new Map<string, { summary: string; timestamp: number }>();
+const SUMMARY_CACHE_TTL = 10 * 60 * 1000;
 
-  const t = {
-    fetchingDiff: language === 'en' ? 'Fetching commit data...' : 'Mengambil data komit...',
-    generateAi: language === 'en' ? 'Generate AI Review' : 'Buat Ulasan AI',
-    generating: language === 'en' ? 'Analyzing code changes...' : 'Menganalisis perubahan kode...',
-    diffTitle: language === 'en' ? 'Code Changes' : 'Perubahan Kode',
-    aiTitle: language === 'en' ? 'AI Review' : 'Ulasan AI',
-    viewOnGithub: language === 'en' ? 'View on GitHub' : 'Lihat di GitHub',
-  };
+const useAiSummary = (commitSha: string, language: 'en' | 'id') => {
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [isGeneratingAi, setIsGeneratingAi] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
-  const handleGenerateSummary = async () => {
+  const generateSummary = async (rawDiff: string, message: string) => {
     if (!rawDiff) return;
     setIsGeneratingAi(true);
     setAiError(null);
+
+    const cacheKey = `${commitSha}_${language}`;
+    const cached = summaryCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < SUMMARY_CACHE_TTL) {
+      setAiSummary(cached.summary);
+      setIsGeneratingAi(false);
+      return;
+    }
 
     try {
       const response = await fetch("/api/summarize", {
@@ -61,19 +53,58 @@ export const AiSummaryPanel: React.FC<AiSummaryPanelProps> = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message, rawDiff, language }),
       });
-
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.error || "Failed to generate AI summary");
       }
-
+      summaryCache.set(cacheKey, { summary: data.summary, timestamp: Date.now() });
       setAiSummary(data.summary);
-    } catch (err: any) {
-      setAiError(err.message || "An error occurred");
+    } catch (err: unknown) {
+      setAiError(err instanceof Error ? err.message : "An error occurred");
     } finally {
       setIsGeneratingAi(false);
     }
   };
+
+  return { aiSummary, isGeneratingAi, aiError, generateSummary };
+};
+
+export const AiSummaryPanel = ({
+  commitSha,
+  branch,
+  githubUrl,
+  message,
+  parsedData,
+  rawDiff,
+  fileStats,
+  diffError,
+  isSummarizing: isFetchingDiff,
+  language = 'en',
+  onClose,
+}: AiSummaryPanelProps) => {
+  const { aiSummary, isGeneratingAi, aiError, generateSummary } = useAiSummary(commitSha, language);
+
+  const translations = {
+    generateAi: language === 'en' ? 'Generate AI Review' : 'Buat Ulasan AI',
+    generating: language === 'en' ? 'Analyzing code changes...' : 'Menganalisis perubahan kode...',
+    viewOnGithub: language === 'en' ? 'View on GitHub' : 'Lihat di GitHub',
+  };
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  const getIssueUrl = (issue: number | string): string => {
+    const match = githubUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+    return match ? `https://github.com/${match[1]}/${match[2]}/issues/${issue}` : '#';
+  };
+
+  const handleGenerateSummary = () => generateSummary(rawDiff || '', message);
+
   return (
     <motion.div
       initial={{ y: "100%", opacity: 0 }}
@@ -82,7 +113,6 @@ export const AiSummaryPanel: React.FC<AiSummaryPanelProps> = ({
       transition={{ type: "spring", damping: 25, stiffness: 200 }}
       className="fixed bottom-0 left-0 w-full h-[85vh] md:h-[65vh] max-h-[85vh] md:max-h-[65vh] z-50 bg-surface-elevated/95 backdrop-blur-xl border-t border-hairline shadow-[0_-10px_40px_rgba(0,0,0,0.3)] rounded-t-2xl flex flex-col"
     >
-      {/* Header */}
       <div className="flex items-start justify-between px-6 py-4 border-b border-hairline/50">
         <div className="flex items-start gap-4">
           <div className="flex flex-col items-center justify-center bg-surface-card p-2 rounded-xl border border-hairline min-w-[3rem] shadow-sm">
@@ -102,29 +132,34 @@ export const AiSummaryPanel: React.FC<AiSummaryPanelProps> = ({
               </span>
             </div>
             <h3 className="text-base font-bold text-white tracking-tight break-words max-w-xl">
-              {parsedData.subject || "Update without subject"}
+              {parsedData.subject || (language === 'en' ? 'Update without subject' : 'Pembaruan tanpa subjek')}
             </h3>
           </div>
         </div>
         <button
           onClick={onClose}
           className="p-2 text-ash hover:text-white hover:bg-white/10 rounded-full transition-colors flex-shrink-0"
-          title="Close"
+          title={language === 'en' ? 'Close' : 'Tutup'}
         >
           <X size={18} />
         </button>
       </div>
 
-      {/* Body */}
       <div className="flex-1 overflow-y-auto px-6 py-5 custom-scrollbar bg-black/20">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
-          
+
+          {diffError && (
+            <div className="md:col-span-3 bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 text-sm text-rose-300">
+              {diffError}
+            </div>
+          )}
+
           <div className="md:col-span-2 space-y-6">
             {isFetchingDiff || isGeneratingAi ? (
               <div className="bg-surface-card/40 rounded-xl border border-hairline/50 p-6 flex flex-col gap-4 animate-pulse">
                 <div className="flex items-center gap-2 mb-2">
                   <Sparkles size={16} className="text-accent-blue" />
-                  <span className="text-sm font-medium text-accent-blue">{t.generating}</span>
+                  <span className="text-sm font-medium text-accent-blue">{translations.generating}</span>
                 </div>
                 <div className="h-4 bg-white/10 rounded w-1/3 mb-2"></div>
                 <div className="flex gap-2">
@@ -154,7 +189,7 @@ export const AiSummaryPanel: React.FC<AiSummaryPanelProps> = ({
                     disabled={!rawDiff}
                     className="flex items-center gap-2 px-6 py-2.5 bg-accent-blue hover:bg-accent-blue/90 text-black font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <Sparkles size={16} /> {t.generateAi}
+                    <Sparkles size={16} /> {translations.generateAi}
                   </button>
                   {aiError && (
                     <p className="text-xs text-rose-400 mt-3">{aiError}</p>
@@ -172,16 +207,16 @@ export const AiSummaryPanel: React.FC<AiSummaryPanelProps> = ({
                       </h4>
                       <p className="text-xs text-ash mt-1">{language === 'en' ? 'List of files changed in this commit:' : 'Daftar file yang diubah pada komit ini:'}</p>
                     </div>
-                    
+
                     <div className="space-y-2">
                       {fileStats.map((f, idx) => {
                         let badgeColor = 'bg-white/10 text-white border-white/20';
                         if (f.status === 'added') badgeColor = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
                         else if (f.status === 'modified') badgeColor = 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20';
                         else if (f.status === 'removed') badgeColor = 'bg-rose-500/10 text-rose-400 border-rose-500/20';
-                        
+
                         return (
-                          <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-black/20 border border-white/5">
+                          <div key={f.name} className="flex items-center justify-between p-2 rounded-lg bg-black/20 border border-white/5">
                             <div className="flex items-center gap-3 truncate">
                                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${badgeColor}`}>
                                  {f.status}
@@ -203,7 +238,6 @@ export const AiSummaryPanel: React.FC<AiSummaryPanelProps> = ({
           </div>
 
           <div className="space-y-6">
-            {/* Section 2: Impact Analysis */}
             <div className="bg-surface-card/40 rounded-xl border border-hairline/50 p-4">
               <h4 className="flex items-center gap-2 text-xs font-bold text-ash uppercase tracking-wider mb-3">
                 <Layers size={14} /> {language === 'en' ? 'Impact Analysis' : 'Analisis Dampak'}
@@ -227,7 +261,6 @@ export const AiSummaryPanel: React.FC<AiSummaryPanelProps> = ({
               </div>
             </div>
 
-            {/* Section 3: Related Links */}
             {(parsedData.issues.length > 0 || githubUrl) && (
               <div className="bg-surface-card/40 rounded-xl border border-hairline/50 p-4">
                 <h4 className="text-xs font-bold text-ash uppercase tracking-wider mb-3">{language === 'en' ? 'Related References' : 'Referensi Terkait'}</h4>
@@ -235,7 +268,7 @@ export const AiSummaryPanel: React.FC<AiSummaryPanelProps> = ({
                   {parsedData.issues.map((issue, idx) => (
                     <a
                       key={idx}
-                      href={`${githubUrl.replace(/\/commit\/.*$/, '')}/issues/${issue}`}
+                      href={getIssueUrl(issue)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center justify-between text-sm text-accent-blue hover:bg-accent-blue/10 px-2 py-1.5 rounded transition-colors group"
@@ -251,7 +284,7 @@ export const AiSummaryPanel: React.FC<AiSummaryPanelProps> = ({
                       rel="noopener noreferrer"
                       className="flex items-center justify-between text-sm text-ash hover:text-white hover:bg-white/5 px-2 py-1.5 rounded transition-colors group"
                     >
-                      <span>{t.viewOnGithub}</span>
+                      <span>{translations.viewOnGithub}</span>
                       <ArrowUpRight size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" />
                     </a>
                   )}
@@ -259,7 +292,7 @@ export const AiSummaryPanel: React.FC<AiSummaryPanelProps> = ({
               </div>
             )}
           </div>
-          
+
         </div>
       </div>
     </motion.div>

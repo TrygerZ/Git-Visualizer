@@ -11,9 +11,10 @@ interface Contributor {
 interface ContributorPanelProps {
   contributors: Contributor[];
   activeContributorName: string | null;
+  language?: 'en' | 'id';
 }
 
-export const ContributorPanel = ({ contributors, activeContributorName }: ContributorPanelProps) => {
+export const ContributorPanel = ({ contributors, activeContributorName, language = 'en' }: ContributorPanelProps) => {
   const [isMinimized, setIsMinimized] = useState(() => (typeof window !== 'undefined' ? window.innerWidth < 768 : false));
 
   React.useEffect(() => {

@@ -5,9 +5,10 @@ import { motion, AnimatePresence } from 'motion/react';
 interface SearchBarProps {
   value: string;
   onChange: (val: string) => void;
+  language?: 'en' | 'id';
 }
 
-export const SearchBar = ({ value, onChange }: SearchBarProps) => {
+export const SearchBar = ({ value, onChange, language = 'en' }: SearchBarProps) => {
   const [isOpen, setIsOpen] = useState(false);
 
   const isExpanded = isOpen || value.length > 0;
